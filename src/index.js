@@ -49,6 +49,20 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_3_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', 'hardcore'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID'),
+    fallbackServer: {
+      id: 'wardogs-hardcore',
+      name: '44th Commandos #3 | Hardcore',
+      status: 'Unavailable',
+      region: 'Qonzer',
+      players: '— / 100',
+      playerCount: null,
+      maxPlayers: 100,
+      map: '—',
+      mode: 'Hardcore',
+      scores: { valkyra: null, lonestar: null, manticore: null },
+      address: '216.144.249.76:7779',
+      notes: 'Live Qonzer WARDOGS RCON status is not configured yet.',
+    },
   },
 ]
 
@@ -64,6 +78,7 @@ const bots = botDefinitions
 function findServer(servers, definition) {
   return servers.find((server) => server?.identifier === definition.serverIdentifier)
     || servers.find((server) => server?.id === `wardogs-${definition.serverIdentifier}`)
+    || definition.fallbackServer
     || null
 }
 
