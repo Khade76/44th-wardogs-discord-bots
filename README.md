@@ -50,40 +50,92 @@ npm install
 npm start
 ```
 
-The process logs each bot login, slash-command registration and presence refresh.
+The process logs Node.js version, working directory, bot configuration, each bot login, slash-command registration and presence refresh.
 
 ## AMP Node.js App Runner
 
-Create a new Node.js App Runner instance in AMP and use this repository:
+Use the official **Node.js App Runner** template in AMP.
+
+### Download settings
 
 ```text
-https://github.com/Khade76/44th-wardogs-discord-bots.git
+App Download Type: Git repo
+App Download Source: https://github.com/Khade76/44th-wardogs-discord-bots.git
+Git Repo Branch: main
+Git Repo Username: leave blank (public repo)
+Git Repo Password/Token: leave blank (public repo)
 ```
 
-Recommended settings:
+After changing the download settings, run **Update Application** in AMP so the repository is actually downloaded.
+
+### Node.js app settings
 
 ```text
-Branch: main
-Node.js: 20.19 or newer
-Startup command: npm start
+Node.js Release Stream: 22 - LTS
+Node.js Version: leave blank
+npm Install Type: npm i
+Run App Setup Commands: disabled
+Run App Pre-start Commands: disabled
+App Name: src/index.js
+App Installation Location: leave blank
+Node.js Command Line Arguments: leave blank
+App Command Line Arguments: leave blank
 ```
 
-If the AMP template asks for a Node application/entry file instead of a package script, use:
+AMP's Node.js App Runner launches Node directly as:
 
 ```text
-src/bootstrap.js
+node src/index.js
 ```
 
-The bootstrap loads `.env` and starts the Discord bot service.
+Do not set `npm start` as the **App Name**. AMP has a separate npm install setting and its App Name field expects the JavaScript entry file.
 
-After AMP downloads the repository:
+### `.env`
 
-1. Run/install dependencies with `npm install` using AMP's dependency/update task.
-2. In AMP File Manager, create `.env` in the repository root from `.env.example`.
-3. Put the two Discord bot tokens, Discord guild ID and website API URL in `.env`.
-4. Start the AMP instance.
+In AMP File Manager, create `.env` in the same directory as `package.json` and `src/`.
 
-No inbound game/network port is required for the Discord bots. They make outbound connections to Discord and the 44th website API.
+The directory should look like:
+
+```text
+package.json
+.env
+src/
+  index.js
+```
+
+Put your bot tokens and API URL in `.env`.
+
+### Start
+
+Run **Update Application** first. AMP should clone the repository and run `npm i`. Then press **Start**.
+
+The first console lines should look similar to:
+
+```text
+44th WARDOGS Discord bot service starting...
+Node.js v22.x.x
+Working directory: .../node-server/app
+Configured bots: #1, #2
+Discord status source: https://YOUR-DOMAIN/api/servers.php
+[Discord Server #1] logged in as ...
+[Discord Server #2] logged in as ...
+```
+
+If it stops immediately, the console now tells you why. The most common messages are:
+
+```text
+No Discord bot tokens are configured.
+```
+
+or:
+
+```text
+DISCORD_STATUS_API_URL is required in .env.
+```
+
+If AMP reports `Cannot find package 'discord.js'` or `Cannot find package 'dotenv'`, run **Update Application** and make sure **npm Install Type** is set to `npm i`.
+
+No inbound game/network port is required. The bots only make outbound connections to Discord and the 44th website API.
 
 ## `/status`
 
