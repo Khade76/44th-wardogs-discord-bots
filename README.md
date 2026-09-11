@@ -4,11 +4,13 @@ Standalone Node.js Discord status bots for the 44th Commando Regiment WARDOGS se
 
 ## Features
 
-- Two Discord bot accounts from one Node.js process
+- Three Discord bot accounts from one Node.js process
+- Server #1 and #2 for the standard 44th WARDOGS servers
+- Server #3 for the Qonzer-hosted Hardcore server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
 - `/status` slash command for an on-demand snapshot
-- Live player count, map, mode and faction scores
+- Live player count, map, mode and faction scores when supplied by the website status API
 - Uses the public 44th website status API
 - No RCON passwords are required in this repository
 - AMP Node.js App Runner friendly
@@ -16,7 +18,7 @@ Standalone Node.js Discord status bots for the 44th Commando Regiment WARDOGS se
 ## Requirements
 
 - Node.js 20.19+
-- Two Discord bot tokens
+- One Discord bot token per bot you want to run
 - The public 44th server status endpoint, for example:
 
 ```text
@@ -42,17 +44,33 @@ DISCORD_WARDOGS_SERVER_1_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_1_STATUS
 DISCORD_WARDOGS_SERVER_2_BOT_TOKEN=BOT_2_TOKEN
 DISCORD_WARDOGS_SERVER_2_IDENTIFIER=9290beb1
 DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_2_STATUS
+
+DISCORD_WARDOGS_SERVER_3_BOT_TOKEN=BOT_3_TOKEN
+DISCORD_WARDOGS_SERVER_3_IDENTIFIER=hardcore
+DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_HARDCORE_STATUS
 ```
 
-Both status channel IDs may point to the same Discord channel if you want the two server embeds together.
+All three status channel IDs may point to the same Discord channel if you want the three server embeds together.
 
 `DISCORD_GUILD_ID` is recommended while testing because `/status` is then registered immediately in that guild. Leave it blank if you want a global slash command instead.
 
 Never commit the real `.env` file or Discord tokens.
 
+## Hardcore server
+
+Server #3 is the 44th Hardcore server hosted by Qonzer:
+
+```text
+216.144.249.76:7779
+```
+
+The bot has a built-in fallback record for this server, so it will identify itself correctly even before Qonzer's WARDOGS HTTP RCON/API allocation is connected to the website status API.
+
+Until that live API endpoint is configured, the Hardcore bot will show the server as unavailable with the known server address. Once Qonzer RCON is connected to the website API, the same bot will automatically begin using its live player count, map, mode and faction scores.
+
 ## Persistent status posts
 
-When `DISCORD_WARDOGS_SERVER_1_STATUS_CHANNEL_ID` and/or `DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID` is set, the appropriate bot maintains one status embed in that channel.
+When a `DISCORD_WARDOGS_SERVER_N_STATUS_CHANNEL_ID` is set, the appropriate bot maintains one status embed in that channel.
 
 On startup the bot searches recent messages for its previous managed status post. If it finds one, it reuses it. If not, it creates one. Every refresh cycle the same message is edited with the latest:
 
@@ -63,6 +81,7 @@ On startup the bot searches recent messages for its previous managed status post
 - Valkyra score
 - Lonestar score
 - Manticore score
+- server address when supplied
 - lighting when available
 - updated timestamp
 
@@ -148,66 +167,12 @@ The first console lines should look similar to:
 44th WARDOGS Discord bot service starting...
 Node.js v22.x.x
 Working directory: .../node-server/app
-Configured bots: #1, #2
+Configured bots: #1, #2, #3
 Discord status source: https://YOUR-DOMAIN/api/servers.php
 Refresh interval: 30000ms
-[Discord Server #1] persistent status channel: 123456789012345678
-[Discord Server #2] persistent status channel: 123456789012345678
-[Discord Server #1] logged in as ...
-[Discord Server #2] logged in as ...
-[Discord Server #1] created persistent status post ...
-[Discord Server #2] created persistent status post ...
+[Discord Server #1] persistent status channel: ...
+[Discord Server #2] persistent status channel: ...
+[Discord Server #3] persistent status channel: ...
 ```
-
-Future refreshes should show:
-
-```text
-[Discord Server #1] updated status post ...
-[Discord Server #2] updated status post ...
-```
-
-If it stops immediately, the console now tells you why. The most common messages are:
-
-```text
-No Discord bot tokens are configured.
-```
-
-or:
-
-```text
-DISCORD_STATUS_API_URL is required in .env.
-```
-
-If AMP reports `Cannot find package 'discord.js'` or `Cannot find package 'dotenv'`, run **Update Application** and make sure **npm Install Type** is set to `npm i`.
 
 No inbound game/network port is required. The bots only make outbound connections to Discord and the 44th website API.
-
-## `/status`
-
-Each bot registers one slash command:
-
-```text
-/status
-```
-
-The bot returns an on-demand embed for the WARDOGS server it represents containing:
-
-- online/starting/offline state
-- player count
-- current map
-- current mode
-- Valkyra score
-- Lonestar score
-- Manticore score
-- lighting when available
-
-## Presence
-
-Example:
-
-```text
-Server #1: Online • 99/100 players
-Server #2: Online • 1/100 players
-```
-
-Offline servers use Discord DND/red status and starting/restarting servers use idle/amber status.
