@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import {
   ActivityType,
   Client,
@@ -61,9 +62,7 @@ function normalisedStatus(server) {
 }
 
 function presenceFor(server) {
-  if (!server) {
-    return { status: 'idle', activity: 'Status unavailable' }
-  }
+  if (!server) return { status: 'idle', activity: 'Status unavailable' }
 
   const current = Number.isFinite(server.playerCount) ? server.playerCount : null
   const max = Number.isFinite(server.maxPlayers) ? server.maxPlayers : null
@@ -212,17 +211,22 @@ async function handleStatusCommand(interaction, bot) {
   }
 }
 
+console.log('44th WARDOGS Discord bot service starting...')
+console.log(`Node.js ${process.version}`)
+console.log(`Working directory: ${process.cwd()}`)
+
 if (!bots.length) {
   console.error('No Discord bot tokens are configured.')
-  console.error('Set DISCORD_WARDOGS_SERVER_1_BOT_TOKEN and/or DISCORD_WARDOGS_SERVER_2_BOT_TOKEN.')
+  console.error('Create a .env file in the AMP App Installation Location and set at least one bot token.')
   process.exit(1)
 }
 
 if (!statusApiUrl()) {
-  console.error('DISCORD_STATUS_API_URL is required.')
+  console.error('DISCORD_STATUS_API_URL is required in .env.')
   process.exit(1)
 }
 
+console.log(`Configured bots: ${bots.map((bot) => `#${bot.number}`).join(', ')}`)
 console.log(`Discord status source: ${statusApiUrl()}`)
 
 for (const bot of bots) {
