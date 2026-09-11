@@ -20,16 +20,57 @@ function statusApiUrl() {
   return env('DISCORD_STATUS_API_URL')
 }
 
+function statsApiUrl() {
+  return env('DISCORD_STATS_API_URL', 'https://44thwardogs.com/api/player-stats.php')
+}
+
 function refreshInterval() {
   const configured = Number(process.env.DISCORD_STATUS_REFRESH_MS || DEFAULT_REFRESH_MS)
   if (!Number.isFinite(configured)) return DEFAULT_REFRESH_MS
   return Math.max(MIN_REFRESH_MS, configured)
 }
 
+const GROUP_CHOICES = [
+  { name: 'Normal (Servers #1 + #2)', value: 'normal' },
+  { name: 'Hardcore (Server #3)', value: 'hardcore' },
+]
+
 const STATUS_COMMAND = new SlashCommandBuilder()
   .setName('status')
   .setDescription('Show the current WARDOGS server status')
   .toJSON()
+
+const STATS_COMMAND = new SlashCommandBuilder()
+  .setName('stats')
+  .setDescription('Show WARDOGS player statistics for a SteamID64')
+  .addStringOption((option) =>
+    option
+      .setName('steamid')
+      .setDescription('SteamID64, for example 76561198000000000')
+      .setRequired(true)
+      .setMinLength(17)
+      .setMaxLength(17)
+  )
+  .addStringOption((option) =>
+    option
+      .setName('group')
+      .setDescription('Stats pool; defaults to this bot server group')
+      .addChoices(...GROUP_CHOICES)
+  )
+  .toJSON()
+
+const TOP10_COMMAND = new SlashCommandBuilder()
+  .setName('top10')
+  .setDescription('Show the WARDOGS top 10 player leaderboard')
+  .addStringOption((option) =>
+    option
+      .setName('group')
+      .setDescription('Stats pool; defaults to this bot server group')
+      .addChoices(...GROUP_CHOICES)
+  )
+  .toJSON()
+
+const COMMANDS = [STATUS_COMMAND, STATS_COMMAND, TOP10_COMMAND]
 
 const botDefinitions = [
   {
@@ -156,10 +197,47 @@ function statusEmbed(server, definition) {
   return embed
 }
 
-async function loadServers() {
-  const url = statusApiUrl()
-  if (!url) throw new Error('DISCORD_STATUS_API_URL is not configured')
+function defaultStatsGroup(bot) {
+  return bot.number === 3 ? 'hardcore' : 'normal'
+}
 
+function groupLabel(group) {
+  return group === 'hardcore' ? 'Hardcore • Server #3' : 'Normal • Servers #1 + #2'
+}
+
+function formatNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toLocaleString('en-GB') : '0'
+}
+
+function formatDuration(seconds) {
+  let remaining = Math.max(0, Math.floor(Number(seconds) || 0))
+  const days = Math.floor(remaining / 86_400)
+  remaining %= 86_400
+  const hours = Math.floor(remaining / 3_600)
+  remaining %= 3_600
+  const minutes = Math.floor(remaining / 60)
+
+  const parts = []
+  if (days) parts.push(`${days}d`)
+  if (hours || days) parts.push(`${hours}h`)
+  parts.push(`${minutes}m`)
+  return parts.join(' ')
+}
+
+function formatDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return `<t:${Math.floor(date.getTime() / 1000)}:R>`
+}
+
+function truncate(value, max = 1024) {
+  const text = String(value ?? '')
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}…`
+}
+
+async function loadJson(url) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
@@ -169,17 +247,131 @@ async function loadServers() {
       signal: controller.signal,
     })
 
-    if (!response.ok) throw new Error(`server API returned HTTP ${response.status}`)
-
-    const payload = await response.json()
-    if (!Array.isArray(payload?.servers)) {
-      throw new Error('server API response did not contain a servers array')
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      // handled below
     }
 
-    return payload.servers
+    if (!response.ok) {
+      const message = payload?.error?.message || payload?.error || `HTTP ${response.status}`
+      throw new Error(String(message))
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('API returned invalid JSON')
+    }
+
+    return payload
   } finally {
     clearTimeout(timeout)
   }
+}
+
+async function loadServers() {
+  const url = statusApiUrl()
+  if (!url) throw new Error('DISCORD_STATUS_API_URL is not configured')
+
+  const payload = await loadJson(url)
+  if (!Array.isArray(payload?.servers)) {
+    throw new Error('server API response did not contain a servers array')
+  }
+
+  return payload.servers
+}
+
+async function loadPlayerStats({ group, search = '', sort = 'kills', limit = 10 }) {
+  const base = statsApiUrl()
+  if (!base) throw new Error('DISCORD_STATS_API_URL is not configured')
+
+  const url = new URL(base)
+  url.searchParams.set('group', group)
+  url.searchParams.set('sort', sort)
+  url.searchParams.set('limit', String(limit))
+  if (search) url.searchParams.set('search', search)
+
+  const payload = await loadJson(url)
+  if (!Array.isArray(payload?.players)) {
+    throw new Error('stats API response did not contain a players array')
+  }
+  return payload
+}
+
+function statsEmbed(player, group) {
+  const online = Boolean(player.online)
+  const aliases = Array.isArray(player.aliases) ? player.aliases.filter(Boolean) : []
+  const servers = Array.isArray(player.serversPlayed) ? player.serversPlayed.filter(Boolean) : []
+
+  const embed = new EmbedBuilder()
+    .setColor(online ? 0x22c55e : 0x5865f2)
+    .setTitle(player.name || player.id || 'WARDOGS Player')
+    .setDescription(`${online ? '🟢 **Online**' : '⚫ **Offline**'} • ${groupLabel(group)}`)
+    .addFields(
+      { name: 'SteamID64', value: String(player.id || '—'), inline: false },
+      { name: 'Kills', value: formatNumber(player.totalKills), inline: true },
+      { name: 'Deaths', value: formatNumber(player.totalDeaths), inline: true },
+      { name: 'K/D', value: String(player.kd ?? '0'), inline: true },
+      { name: 'Playtime', value: formatDuration(player.secondsTracked), inline: true },
+      { name: 'Matches', value: formatNumber(player.matchesSeen), inline: true },
+      { name: 'Sessions', value: formatNumber(player.sessionsSeen), inline: true },
+      { name: 'First Seen', value: formatDate(player.firstSeen), inline: true },
+      { name: 'Last Seen', value: formatDate(player.lastSeen), inline: true },
+    )
+    .setFooter({ text: '44th Commando Regiment • WARDOGS Player Stats' })
+    .setTimestamp()
+
+  if (online) {
+    embed.addFields(
+      { name: 'Current Server', value: truncate(player.currentServerName || '—'), inline: true },
+      { name: 'Faction', value: truncate(player.currentFaction || '—'), inline: true },
+      { name: 'Cash', value: player.currentCash === null || player.currentCash === undefined ? '—' : formatNumber(player.currentCash), inline: true },
+    )
+  }
+
+  if (aliases.length) {
+    embed.addFields({ name: 'Known Aliases', value: truncate(aliases.join(', ')), inline: false })
+  }
+
+  if (servers.length) {
+    embed.addFields({ name: 'Servers Played', value: truncate(servers.join('\n')), inline: false })
+  }
+
+  return embed
+}
+
+function top10Embed(payload, group) {
+  const players = payload.players.slice(0, 10)
+  const summary = payload.summary || {}
+
+  const description = players.length
+    ? players.map((player, index) => {
+      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`
+      return `${medal} **${truncate(player.name || player.id, 48)}**\n` +
+        `Kills **${formatNumber(player.totalKills)}** • Deaths **${formatNumber(player.totalDeaths)}** • K/D **${player.kd ?? 0}** • ${formatDuration(player.secondsTracked)}`
+    }).join('\n\n')
+    : 'No tracked players were found for this stats group.'
+
+  return new EmbedBuilder()
+    .setColor(group === 'hardcore' ? 0xef4444 : 0x5865f2)
+    .setTitle(`44th WARDOGS Top 10 • ${group === 'hardcore' ? 'Hardcore' : 'Normal'}`)
+    .setDescription(description)
+    .addFields(
+      { name: 'Tracked Players', value: formatNumber(summary.trackedPlayers ?? payload.total), inline: true },
+      { name: 'Online Now', value: formatNumber(summary.onlinePlayers), inline: true },
+      { name: 'Total Recorded Kills', value: formatNumber(summary.totalKillsRecorded), inline: true },
+    )
+    .setFooter({ text: `${groupLabel(group)} • Ranked by total kills` })
+    .setTimestamp(payload.generatedAt ? new Date(payload.generatedAt) : new Date())
+}
+
+function errorEmbed(title, description) {
+  return new EmbedBuilder()
+    .setColor(0xef4444)
+    .setTitle(title)
+    .setDescription(description)
+    .setFooter({ text: '44th Commando Regiment • WARDOGS' })
+    .setTimestamp()
 }
 
 function isManagedStatusMessage(message, bot) {
@@ -284,13 +476,13 @@ async function registerCommands(bot) {
 
   if (guildId) {
     const guild = await bot.client.guilds.fetch(guildId)
-    await guild.commands.set([STATUS_COMMAND])
-    console.log(`[Discord Server #${bot.number}] registered /status in guild ${guildId}`)
+    await guild.commands.set(COMMANDS)
+    console.log(`[Discord Server #${bot.number}] registered /status, /stats and /top10 in guild ${guildId}`)
     return
   }
 
-  await bot.client.application.commands.set([STATUS_COMMAND])
-  console.log(`[Discord Server #${bot.number}] registered global /status command`)
+  await bot.client.application.commands.set(COMMANDS)
+  console.log(`[Discord Server #${bot.number}] registered global /status, /stats and /top10 commands`)
 }
 
 async function handleStatusCommand(interaction, bot) {
@@ -303,13 +495,87 @@ async function handleStatusCommand(interaction, bot) {
   } catch (error) {
     console.error(`[Discord Server #${bot.number}] /status failed:`, error.message)
     await interaction.editReply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor(0xef4444)
-          .setTitle(`44th WARDOGS Server #${bot.number}`)
-          .setDescription('Unable to load the current server status. Please try again shortly.'),
-      ],
+      embeds: [errorEmbed(
+        `44th WARDOGS Server #${bot.number}`,
+        'Unable to load the current server status. Please try again shortly.',
+      )],
     })
+  }
+}
+
+async function handleStatsCommand(interaction, bot) {
+  await interaction.deferReply()
+
+  const steamId = interaction.options.getString('steamid', true).trim()
+  const group = interaction.options.getString('group') || defaultStatsGroup(bot)
+
+  if (!/^\d{17}$/.test(steamId)) {
+    await interaction.editReply({
+      embeds: [errorEmbed('Invalid SteamID64', 'Please provide a 17-digit SteamID64.')],
+    })
+    return
+  }
+
+  try {
+    const payload = await loadPlayerStats({ group, search: steamId, limit: 20 })
+    const player = payload.players.find((candidate) => String(candidate?.id) === steamId)
+
+    if (!player) {
+      await interaction.editReply({
+        embeds: [errorEmbed(
+          'WARDOGS Player Not Found',
+          `No ${group === 'hardcore' ? 'Hardcore' : 'Normal'} stats were found for SteamID64 \`${steamId}\`.`,
+        )],
+      })
+      return
+    }
+
+    await interaction.editReply({ embeds: [statsEmbed(player, group)] })
+  } catch (error) {
+    console.error(`[Discord Server #${bot.number}] /stats failed:`, error.message)
+    await interaction.editReply({
+      embeds: [errorEmbed(
+        'WARDOGS Stats Unavailable',
+        'Unable to load player statistics from the 44th website. Please try again shortly.',
+      )],
+    })
+  }
+}
+
+async function handleTop10Command(interaction, bot) {
+  await interaction.deferReply()
+
+  const group = interaction.options.getString('group') || defaultStatsGroup(bot)
+
+  try {
+    const payload = await loadPlayerStats({ group, sort: 'kills', limit: 10 })
+    await interaction.editReply({ embeds: [top10Embed(payload, group)] })
+  } catch (error) {
+    console.error(`[Discord Server #${bot.number}] /top10 failed:`, error.message)
+    await interaction.editReply({
+      embeds: [errorEmbed(
+        'WARDOGS Leaderboard Unavailable',
+        'Unable to load the WARDOGS leaderboard from the 44th website. Please try again shortly.',
+      )],
+    })
+  }
+}
+
+async function handleInteraction(interaction, bot) {
+  if (!interaction.isChatInputCommand()) return
+
+  if (interaction.commandName === 'status') {
+    await handleStatusCommand(interaction, bot)
+    return
+  }
+
+  if (interaction.commandName === 'stats') {
+    await handleStatsCommand(interaction, bot)
+    return
+  }
+
+  if (interaction.commandName === 'top10') {
+    await handleTop10Command(interaction, bot)
   }
 }
 
@@ -328,8 +594,14 @@ if (!statusApiUrl()) {
   process.exit(1)
 }
 
+if (!statsApiUrl()) {
+  console.error('DISCORD_STATS_API_URL is required in .env.')
+  process.exit(1)
+}
+
 console.log(`Configured bots: ${bots.map((bot) => `#${bot.number}`).join(', ')}`)
 console.log(`Discord status source: ${statusApiUrl()}`)
+console.log(`Discord stats source: ${statsApiUrl()}`)
 console.log(`Refresh interval: ${refreshInterval()}ms`)
 for (const bot of bots) {
   console.log(`[Discord Server #${bot.number}] persistent status channel: ${bot.statusChannelId || 'not configured'}`)
@@ -349,8 +621,7 @@ for (const bot of bots) {
   })
 
   bot.client.on(Events.InteractionCreate, (interaction) => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== 'status') return
-    handleStatusCommand(interaction, bot).catch((error) => {
+    handleInteraction(interaction, bot).catch((error) => {
       console.error(`[Discord Server #${bot.number}] interaction error:`, error)
     })
   })
