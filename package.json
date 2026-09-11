@@ -1,13 +1,13 @@
 {
   "name": "44th-wardogs-discord-bots",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
   "scripts": {
-    "start": "node src/bootstrap.js"
+    "start": "node src/index.js"
   },
   "dependencies": {
     "discord.js": "^14.27.0",
