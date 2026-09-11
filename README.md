@@ -1,6 +1,6 @@
 # 44th WARDOGS Discord Bots
 
-Standalone Node.js Discord status bots for the 44th Commando Regiment WARDOGS servers.
+Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 
 ## Features
 
@@ -9,10 +9,15 @@ Standalone Node.js Discord status bots for the 44th Commando Regiment WARDOGS se
 - Server #3 for the Qonzer-hosted Hardcore server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
-- `/status` slash command for an on-demand snapshot
+- `/status` slash command for an on-demand server snapshot
+- `/stats <steamid>` slash command for persistent WARDOGS player statistics
+- `/top10` slash command for the current lifetime-kills leaderboard
+- Normal stats combine Servers #1 + #2; Hardcore stats use Server #3 only
+- Optional Normal/Hardcore selector on `/stats` and `/top10`
 - Live player count, map, mode and faction scores when supplied by the website status API
-- Uses the public 44th website status API
-- No RCON passwords are required in this repository
+- Player kills, deaths, K/D, playtime, matches, sessions, aliases and current server/faction when supplied by the website stats API
+- Uses the public 44th website APIs
+- No RCON passwords or WARCON API keys are required in this repository
 - AMP Node.js App Runner friendly
 
 ## Requirements
@@ -22,7 +27,13 @@ Standalone Node.js Discord status bots for the 44th Commando Regiment WARDOGS se
 - The public 44th server status endpoint, for example:
 
 ```text
-https://YOUR-DOMAIN/api/servers.php
+https://44thwardogs.com/api/servers.php
+```
+
+- The public 44th player-stats endpoint:
+
+```text
+https://44thwardogs.com/api/player-stats.php
 ```
 
 For persistent status posts, each bot also needs permission in its configured Discord channel to **View Channel**, **Send Messages**, **Embed Links**, and **Read Message History**.
@@ -32,7 +43,8 @@ For persistent status posts, each bot also needs permission in its configured Di
 Copy `.env.example` to `.env` and fill in the values:
 
 ```env
-DISCORD_STATUS_API_URL=https://YOUR-DOMAIN/api/servers.php
+DISCORD_STATUS_API_URL=https://44thwardogs.com/api/servers.php
+DISCORD_STATS_API_URL=https://44thwardogs.com/api/player-stats.php
 DISCORD_STATUS_REFRESH_MS=30000
 
 DISCORD_GUILD_ID=YOUR_DISCORD_SERVER_ID
@@ -50,11 +62,62 @@ DISCORD_WARDOGS_SERVER_3_IDENTIFIER=hardcore
 DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_HARDCORE_STATUS
 ```
 
+`DISCORD_STATS_API_URL` defaults to `https://44thwardogs.com/api/player-stats.php`, so it can be omitted once the production website endpoint is live. It is included explicitly in `.env.example` so the source is obvious.
+
 All three status channel IDs may point to the same Discord channel if you want the three server embeds together.
 
-`DISCORD_GUILD_ID` is recommended while testing because `/status` is then registered immediately in that guild. Leave it blank if you want a global slash command instead.
+`DISCORD_GUILD_ID` is recommended while testing because slash-command updates are then registered immediately in that guild. Leave it blank if you want global slash commands instead.
 
 Never commit the real `.env` file or Discord tokens.
+
+## Slash commands
+
+### `/status`
+
+Shows an on-demand snapshot for the bot's WARDOGS server, including player count, map, mode and faction scores.
+
+### `/stats steamid:<SteamID64> [group]`
+
+Looks up a player through the 44th website stats API and displays:
+
+- current player name
+- SteamID64
+- online/offline state
+- total kills
+- total deaths
+- K/D
+- tracked playtime
+- matches
+- connection sessions
+- first seen / last seen
+- current server, faction and cash when online
+- known aliases
+- servers played
+
+The SteamID must be a 17-digit SteamID64.
+
+The optional `group` can be:
+
+- **Normal** — Servers #1 + #2 combined
+- **Hardcore** — Server #3 only
+
+If `group` is omitted, Server #1 and #2 bots default to Normal, while Server #3 defaults to Hardcore.
+
+Examples:
+
+```text
+/stats steamid:76561198091536028
+/stats steamid:76561198091536028 group:Normal
+/stats steamid:76561198091536028 group:Hardcore
+```
+
+### `/top10 [group]`
+
+Shows the top 10 tracked WARDOGS players ranked by total kills. Each leaderboard entry includes kills, deaths, K/D and tracked playtime.
+
+The embed also shows the number of tracked players, players online and total recorded kills for that stats group.
+
+As with `/stats`, Server #1/#2 bots default to Normal and Server #3 defaults to Hardcore, or the user can explicitly select either group.
 
 ## Hardcore server
 
@@ -66,7 +129,7 @@ Server #3 is the 44th Hardcore server hosted by Qonzer:
 
 The bot has a built-in fallback record for this server, so it will identify itself correctly even before Qonzer's WARDOGS HTTP RCON/API allocation is connected to the website status API.
 
-Until that live API endpoint is configured, the Hardcore bot will show the server as unavailable with the known server address. Once Qonzer RCON is connected to the website API, the same bot will automatically begin using its live player count, map, mode and faction scores.
+Once Qonzer RCON is connected to the website API, the same bot automatically uses its live player count, map, mode and faction scores.
 
 ## Persistent status posts
 
@@ -102,7 +165,7 @@ npm install
 npm start
 ```
 
-The process logs Node.js version, working directory, bot configuration, status channel configuration, each bot login, slash-command registration and every persistent status-post update.
+The process logs Node.js version, working directory, bot configuration, website API sources, each bot login, slash-command registration and every persistent status-post update.
 
 ## AMP Node.js App Runner
 
@@ -155,11 +218,31 @@ src/
   index.js
 ```
 
-Put your bot tokens, Discord guild ID, website API URL and optional persistent status channel IDs in `.env`.
+Put your bot tokens, Discord guild ID, website API URLs and optional persistent status channel IDs in `.env`.
+
+### Updating an existing AMP bot
+
+Because the bot is already installed from GitHub, use **Update Application** in AMP to pull the latest `main`, then restart the instance.
+
+If your existing `.env` already has the Discord tokens/status settings, you only need to add this line if you want to set the stats source explicitly:
+
+```env
+DISCORD_STATS_API_URL=https://44thwardogs.com/api/player-stats.php
+```
+
+The code defaults to that production endpoint when the line is absent.
+
+After restart, with `DISCORD_GUILD_ID` configured, the console should show:
+
+```text
+registered /status, /stats and /top10 in guild ...
+```
+
+The commands should then be available immediately in that Discord server.
 
 ### Start
 
-Run **Update Application** first. AMP should clone the repository and run `npm i`. Then press **Start**.
+Run **Update Application** first. AMP should pull the repository and run `npm i`. Then press **Start**.
 
 The first console lines should look similar to:
 
@@ -168,11 +251,12 @@ The first console lines should look similar to:
 Node.js v22.x.x
 Working directory: .../node-server/app
 Configured bots: #1, #2, #3
-Discord status source: https://YOUR-DOMAIN/api/servers.php
+Discord status source: https://44thwardogs.com/api/servers.php
+Discord stats source: https://44thwardogs.com/api/player-stats.php
 Refresh interval: 30000ms
 [Discord Server #1] persistent status channel: ...
 [Discord Server #2] persistent status channel: ...
 [Discord Server #3] persistent status channel: ...
 ```
 
-No inbound game/network port is required. The bots only make outbound connections to Discord and the 44th website API.
+No inbound game/network port is required. The bots only make outbound connections to Discord and the public 44th website APIs.
