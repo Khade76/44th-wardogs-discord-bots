@@ -44,6 +44,12 @@ const botDefinitions = [
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_2_IDENTIFIER', '9290beb1'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID'),
   },
+  {
+    number: 3,
+    token: env('DISCORD_WARDOGS_SERVER_3_BOT_TOKEN'),
+    serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', 'hardcore'),
+    statusChannelId: env('DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID'),
+  },
 ]
 
 const bots = botDefinitions
@@ -123,6 +129,10 @@ function statusEmbed(server, definition) {
     )
     .setFooter({ text: `44th Commando Regiment • WARDOGS Server #${definition.number}` })
     .setTimestamp(server.updatedAt ? new Date(server.updatedAt) : new Date())
+
+  if (server.address) {
+    embed.addFields({ name: 'Server Address', value: String(server.address), inline: true })
+  }
 
   if (server.lighting) {
     embed.addFields({ name: 'Lighting', value: String(server.lighting), inline: true })
