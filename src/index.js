@@ -36,11 +36,13 @@ const botDefinitions = [
     number: 1,
     token: env('DISCORD_WARDOGS_SERVER_1_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_1_IDENTIFIER', '278c7bc5'),
+    statusChannelId: env('DISCORD_WARDOGS_SERVER_1_STATUS_CHANNEL_ID'),
   },
   {
     number: 2,
     token: env('DISCORD_WARDOGS_SERVER_2_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_2_IDENTIFIER', '9290beb1'),
+    statusChannelId: env('DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID'),
   },
 ]
 
@@ -49,6 +51,8 @@ const bots = botDefinitions
   .map((definition) => ({
     ...definition,
     client: new Client({ intents: [GatewayIntentBits.Guilds] }),
+    statusMessage: null,
+    statusMessagePromise: null,
   }))
 
 function findServer(servers, definition) {
@@ -96,6 +100,7 @@ function statusEmbed(server, definition) {
       .setColor(0xef4444)
       .setTitle(`44th WARDOGS Server #${definition.number}`)
       .setDescription('Server status is currently unavailable.')
+      .setFooter({ text: `44th Commando Regiment • WARDOGS Server #${definition.number}` })
       .setTimestamp()
   }
 
@@ -152,7 +157,73 @@ async function loadServers() {
   }
 }
 
-async function refreshPresences() {
+function isManagedStatusMessage(message, bot) {
+  if (!message || message.author?.id !== bot.client.user?.id) return false
+  const footer = message.embeds?.[0]?.footer?.text || ''
+  return footer.includes(`WARDOGS Server #${bot.number}`)
+}
+
+async function resolveStatusMessage(bot, channel) {
+  if (bot.statusMessage) {
+    try {
+      return await channel.messages.fetch(bot.statusMessage.id)
+    } catch {
+      bot.statusMessage = null
+    }
+  }
+
+  try {
+    const recent = await channel.messages.fetch({ limit: 50 })
+    const existing = recent.find((message) => isManagedStatusMessage(message, bot))
+    if (existing) {
+      bot.statusMessage = existing
+      return existing
+    }
+  } catch (error) {
+    console.warn(`[Discord Server #${bot.number}] unable to search for an existing status post:`, error.message)
+  }
+
+  return null
+}
+
+async function updatePersistentStatusPost(bot, server) {
+  if (!bot.statusChannelId || !bot.client.isReady()) return
+  if (bot.statusMessagePromise) return bot.statusMessagePromise
+
+  bot.statusMessagePromise = (async () => {
+    const channel = await bot.client.channels.fetch(bot.statusChannelId)
+    if (!channel?.isTextBased() || !channel.messages || typeof channel.send !== 'function') {
+      throw new Error(`status channel ${bot.statusChannelId} is not a text channel the bot can post in`)
+    }
+
+    const payload = { embeds: [statusEmbed(server, bot)] }
+    let message = await resolveStatusMessage(bot, channel)
+
+    if (message) {
+      try {
+        message = await message.edit(payload)
+        bot.statusMessage = message
+        console.log(`[Discord Server #${bot.number}] updated status post ${message.id}`)
+        return
+      } catch (error) {
+        console.warn(`[Discord Server #${bot.number}] could not edit status post ${message.id}; creating a replacement:`, error.message)
+        bot.statusMessage = null
+      }
+    }
+
+    message = await channel.send(payload)
+    bot.statusMessage = message
+    console.log(`[Discord Server #${bot.number}] created persistent status post ${message.id} in channel ${bot.statusChannelId}`)
+  })()
+
+  try {
+    await bot.statusMessagePromise
+  } finally {
+    bot.statusMessagePromise = null
+  }
+}
+
+async function refreshStatus() {
   if (!bots.some(({ client }) => client.isReady())) return
 
   let servers = []
@@ -174,6 +245,12 @@ async function refreshPresences() {
     })
 
     console.log(`[Discord Server #${bot.number}] ${bot.client.user.tag}: ${presence.activity}`)
+
+    try {
+      await updatePersistentStatusPost(bot, server)
+    } catch (error) {
+      console.error(`[Discord Server #${bot.number}] persistent status post update failed:`, error.message)
+    }
   }
 }
 
@@ -228,6 +305,10 @@ if (!statusApiUrl()) {
 
 console.log(`Configured bots: ${bots.map((bot) => `#${bot.number}`).join(', ')}`)
 console.log(`Discord status source: ${statusApiUrl()}`)
+console.log(`Refresh interval: ${refreshInterval()}ms`)
+for (const bot of bots) {
+  console.log(`[Discord Server #${bot.number}] persistent status channel: ${bot.statusChannelId || 'not configured'}`)
+}
 
 for (const bot of bots) {
   bot.client.once(Events.ClientReady, async (readyClient) => {
@@ -239,7 +320,7 @@ for (const bot of bots) {
       console.error(`[Discord Server #${bot.number}] slash command registration failed:`, error.message)
     }
 
-    refreshPresences().catch((error) => console.error('Initial presence refresh failed:', error))
+    refreshStatus().catch((error) => console.error('Initial status refresh failed:', error))
   })
 
   bot.client.on(Events.InteractionCreate, (interaction) => {
@@ -259,7 +340,7 @@ for (const bot of bots) {
 }
 
 const timer = setInterval(() => {
-  refreshPresences().catch((error) => console.error('Discord presence refresh failed:', error))
+  refreshStatus().catch((error) => console.error('Discord status refresh failed:', error))
 }, refreshInterval())
 
 timer.unref?.()
