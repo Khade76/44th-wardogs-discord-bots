@@ -11,6 +11,25 @@ import {
 const DEFAULT_REFRESH_MS = 30_000
 const MIN_REFRESH_MS = 15_000
 const REQUEST_TIMEOUT_MS = 8_000
+const WARCON_MAP_ART_BASE = 'https://raw.githubusercontent.com/warcon-app/warcon/main/static/maps'
+const MAP_ART_DIRECTORIES = Object.freeze({
+  Kavkazi: 'Kavkazi',
+  Bakurani: 'Kavkazi',
+  Europe: 'Europe',
+  Ozeti: 'Europe',
+  NorthAmerica: 'NorthAmerica',
+  Zestafona: 'NorthAmerica',
+})
+const MAP_ART_LIGHTING = new Set([
+  'DayStartClear',
+  'DayEarlyClear',
+  'DayEarlyFog',
+  'DayClear',
+  'DayLateClear',
+  'DayLateGray',
+  'DayLateGrayFog',
+  'DayEndClear',
+])
 
 function env(name, fallback = '') {
   return String(process.env[name] ?? fallback).trim()
@@ -156,6 +175,17 @@ function scoreValue(value) {
   return Number.isFinite(value) ? String(value) : '—'
 }
 
+function statusMapArtUrl(server) {
+  const map = String(server?.map || '').trim()
+  const directory = MAP_ART_DIRECTORIES[map]
+  if (!directory) return null
+
+  const requestedLighting = String(server?.lighting || '').trim()
+  const lighting = MAP_ART_LIGHTING.has(requestedLighting) ? requestedLighting : 'DayClear'
+
+  return `${WARCON_MAP_ART_BASE}/${encodeURIComponent(directory)}/${encodeURIComponent(lighting)}-720.webp`
+}
+
 function statusEmbed(server, definition) {
   if (!server) {
     return new EmbedBuilder()
@@ -172,6 +202,10 @@ function statusEmbed(server, definition) {
     `🔵 **Lonestar:** ${scoreValue(scores.lonestar)}`,
     `🟢 **Manticore:** ${scoreValue(scores.manticore)}`,
   ].join('\n')
+  const mapArtUrl = statusMapArtUrl(server)
+  const footer = mapArtUrl
+    ? `44th Commando Regiment • WARDOGS Server #${definition.number} • Map imagery © BULKHEAD`
+    : `44th Commando Regiment • WARDOGS Server #${definition.number}`
 
   const embed = new EmbedBuilder()
     .setColor(statusColour(server))
@@ -183,7 +217,7 @@ function statusEmbed(server, definition) {
       { name: 'Mode', value: String(server.mode || '—'), inline: true },
       { name: 'Faction Scores', value: factionScores, inline: false },
     )
-    .setFooter({ text: `44th Commando Regiment • WARDOGS Server #${definition.number}` })
+    .setFooter({ text: footer })
     .setTimestamp(server.updatedAt ? new Date(server.updatedAt) : new Date())
 
   if (server.address) {
@@ -192,6 +226,10 @@ function statusEmbed(server, definition) {
 
   if (server.lighting) {
     embed.addFields({ name: 'Lighting', value: String(server.lighting), inline: true })
+  }
+
+  if (mapArtUrl) {
+    embed.setImage(mapArtUrl)
   }
 
   return embed
