@@ -96,18 +96,21 @@ const botDefinitions = [
     number: 1,
     token: env('DISCORD_WARDOGS_SERVER_1_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_1_IDENTIFIER', '278c7bc5'),
+    joinCode: env('DISCORD_WARDOGS_SERVER_1_JOIN_CODE', '89607037-07ad-4039-8f7d-1fb9a46e707b'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_1_STATUS_CHANNEL_ID'),
   },
   {
     number: 2,
     token: env('DISCORD_WARDOGS_SERVER_2_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_2_IDENTIFIER', '9290beb1'),
+    joinCode: env('DISCORD_WARDOGS_SERVER_2_JOIN_CODE', '6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID'),
   },
   {
     number: 3,
     token: env('DISCORD_WARDOGS_SERVER_3_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', 'hardcore'),
+    joinCode: env('DISCORD_WARDOGS_SERVER_3_JOIN_CODE', '529de475-7326-4178-81f0-f720aa9c9206'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-hardcore',
@@ -119,6 +122,8 @@ const botDefinitions = [
       maxPlayers: 100,
       map: '—',
       mode: 'Hardcore',
+      joinCode: '529de475-7326-4178-81f0-f720aa9c9206',
+      joinId: '529de475-7326-4178-81f0-f720aa9c9206',
       scores: { valkyra: null, lonestar: null, manticore: null },
       address: '216.144.249.76:7779',
       notes: 'Live Qonzer WARDOGS RCON status is not configured yet.',
@@ -175,6 +180,16 @@ function scoreValue(value) {
   return Number.isFinite(value) ? String(value) : '—'
 }
 
+function persistentJoinCode(server, definition) {
+  const apiCode = String(server?.joinCode || server?.joinId || '').trim()
+  const configuredCode = String(definition?.joinCode || '').trim()
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+  if (uuid.test(apiCode)) return apiCode
+  if (uuid.test(configuredCode)) return configuredCode
+  return ''
+}
+
 function statusMapArtUrl(server) {
   const map = String(server?.map || '').trim()
   const directory = MAP_ART_DIRECTORIES[map]
@@ -187,13 +202,21 @@ function statusMapArtUrl(server) {
 }
 
 function statusEmbed(server, definition) {
+  const joinCode = persistentJoinCode(server, definition)
+
   if (!server) {
-    return new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor(0xef4444)
       .setTitle(`44th WARDOGS Server #${definition.number}`)
       .setDescription('Server status is currently unavailable.')
       .setFooter({ text: `44th Commando Regiment • WARDOGS Server #${definition.number}` })
       .setTimestamp()
+
+    if (joinCode) {
+      embed.addFields({ name: 'Persistent Join Code', value: `\`${joinCode}\``, inline: false })
+    }
+
+    return embed
   }
 
   const scores = server.scores || {}
@@ -222,6 +245,10 @@ function statusEmbed(server, definition) {
 
   if (server.address) {
     embed.addFields({ name: 'Server Address', value: String(server.address), inline: true })
+  }
+
+  if (joinCode) {
+    embed.addFields({ name: 'Persistent Join Code', value: `\`${joinCode}\``, inline: false })
   }
 
   if (server.lighting) {
