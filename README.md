@@ -4,15 +4,15 @@ Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 
 ## Features
 
-- Three Discord bot accounts from one Node.js process
-- Server #1 and #2 for the standard 44th WARDOGS servers
-- Server #3 for the Qonzer-hosted Hardcore server
+- Up to four Discord bot accounts from one Node.js process (only accounts with a token start)
+- Servers #1, #2 and #3 for the normal 44th WARDOGS servers
+- Server #4 for the XRealm-hosted Hardcore server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
 - `/status` slash command for an on-demand server snapshot
 - `/stats <steamid>` slash command for persistent WARDOGS player statistics
 - `/top10` slash command for the current lifetime-kills leaderboard
-- Normal stats combine Servers #1 + #2; Hardcore stats use Server #3 only
+- Normal/Hardcore stats pools are supplied by the website/WARCON stats API
 - Optional Normal/Hardcore selector on `/stats` and `/top10`
 - Live player count, map, mode and faction scores when supplied by the website status API
 - Player kills, deaths, K/D, playtime, matches, sessions, aliases and current server/faction when supplied by the website stats API
@@ -60,14 +60,19 @@ DISCORD_WARDOGS_SERVER_2_JOIN_CODE=6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1
 DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_2_STATUS
 
 DISCORD_WARDOGS_SERVER_3_BOT_TOKEN=BOT_3_TOKEN
-DISCORD_WARDOGS_SERVER_3_IDENTIFIER=hardcore
+DISCORD_WARDOGS_SERVER_3_IDENTIFIER=9f71e8ef
 DISCORD_WARDOGS_SERVER_3_JOIN_CODE=529de475-7326-4178-81f0-f720aa9c9206
-DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_HARDCORE_STATUS
+DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_3_STATUS
+
+DISCORD_WARDOGS_SERVER_4_BOT_TOKEN=BOT_4_TOKEN
+DISCORD_WARDOGS_SERVER_4_IDENTIFIER=12577
+DISCORD_WARDOGS_SERVER_4_JOIN_CODE=7f15ef51-2673-4eab-b3c8-d8176a3b41e4
+DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_HARDCORE_STATUS
 ```
 
 `DISCORD_STATS_API_URL` defaults to `https://44thwardogs.com/api/player-stats.php`, so it can be omitted once the production website endpoint is live. It is included explicitly in `.env.example` so the source is obvious.
 
-All three status channel IDs may point to the same Discord channel if you want the three server embeds together.
+All four status channel IDs may point to the same Discord channel if you want the server embeds together.
 
 `DISCORD_GUILD_ID` is recommended while testing because slash-command updates are then registered immediately in that guild. Leave it blank if you want global slash commands instead.
 
@@ -101,10 +106,10 @@ The SteamID must be a 17-digit SteamID64.
 
 The optional `group` can be:
 
-- **Normal** — Servers #1 + #2 combined
-- **Hardcore** — Server #3 only
+- **Normal** — the website/WARCON Normal stats pool
+- **Hardcore** — the website/WARCON Hardcore stats pool
 
-If `group` is omitted, Server #1 and #2 bots default to Normal, while Server #3 defaults to Hardcore.
+If `group` is omitted, Server #1, #2 and #3 bots default to Normal, while Server #4 defaults to Hardcore. The upstream stats API determines which recorded matches belong to each pool; adding a bot does not change that classification.
 
 Examples:
 
@@ -120,19 +125,42 @@ Shows the top 10 tracked WARDOGS players ranked by total kills. Each leaderboard
 
 The embed also shows the number of tracked players, players online and total recorded kills for that stats group.
 
-As with `/stats`, Server #1/#2 bots default to Normal and Server #3 defaults to Hardcore, or the user can explicitly select either group.
+As with `/stats`, Server #1/#2/#3 bots default to Normal and Server #4 defaults to Hardcore, or the user can explicitly select either group.
 
-## Hardcore server
+## Server #4: XRealm Hardcore
 
-Server #3 is the 44th Hardcore server hosted by Qonzer:
+- Name: `44th Commandos #4 | Hardcore | discord.gg/44thwardogs`
+- XRealm ID / default bot lookup identifier: `12577`
+- Persistent join code: `7f15ef51-2673-4eab-b3c8-d8176a3b41e4`
+- RCON endpoint: `84.32.103.104:20001` (management endpoint, not a player join address)
 
-```text
-216.144.249.76:7779
+Server #4 is already registered in WARCON. The bots read live status from the website's `servers.php`, which has its own private RCON connections. Registering a server in WARCON does not automatically add it to that website feed.
+
+### Add the website status connection
+
+In the existing private `wardogs-secrets.php` (outside OVH's public `www` directory), append this record inside the `servers` array, keeping the other server records and settings:
+
+```php
+[
+    'id' => 'wardogs-12577',
+    'name' => '44th Commandos #4 | Hardcore | discord.gg/44thwardogs',
+    'url' => 'http://84.32.103.104:20001',
+    'password' => 'CHANGE_ME_SERVER_4_RCON_PASSWORD',
+    'joinCode' => '7f15ef51-2673-4eab-b3c8-d8176a3b41e4',
+],
 ```
 
-The bot has a built-in fallback record for this server, so it will identify itself correctly even before Qonzer's WARDOGS HTTP RCON/API allocation is connected to the website status API.
+Set the real RCON password only in that private website file. Use the same HTTP/HTTPS scheme as the working connection in WARCON; the snippet assumes HTTP. No RCON password or WARCON API key goes in the bot configuration.
 
-Once Qonzer RCON is connected to the website API, the same bot automatically uses its live player count, map, mode and faction scores.
+The website feed must return `id: "wardogs-12577"` or `identifier: "12577"`. The ID here is the agreed website lookup key based on the XRealm ID, not a WARCON database ID. If you use another website ID, set `DISCORD_WARDOGS_SERVER_4_IDENTIFIER` to its suffix after `wardogs-`.
+
+Without a matching feed record, bot #4 displays an unavailable fallback with its name and persistent join code. It does not invent player counts or display the RCON endpoint as a join address. Once the feed supplies the record, the same bot uses its live status, players, map and faction scores.
+
+### Enable the Discord account
+
+Add the Server #4 block from `.env.example` to the existing AMP `.env`, set the fourth account's bot token, and optionally set its status channel ID. Invite that account to the Discord server with the `bot` and `applications.commands` scopes and the channel permissions listed above. Leave the token blank to keep running only the existing accounts.
+
+Older `.env` files may still contain `DISCORD_WARDOGS_SERVER_3_IDENTIFIER=hardcore`. Change that value to `9f71e8ef` for the current Normal Server #3; existing environment values override the new code defaults.
 
 ## Persistent status posts
 
@@ -254,13 +282,14 @@ The first console lines should look similar to:
 44th WARDOGS Discord bot service starting...
 Node.js v22.x.x
 Working directory: .../node-server/app
-Configured bots: #1, #2, #3
+Configured bots: #1, #2, #3, #4
 Discord status source: https://44thwardogs.com/api/servers.php
 Discord stats source: https://44thwardogs.com/api/player-stats.php
 Refresh interval: 30000ms
 [Discord Server #1] persistent status channel: ...
 [Discord Server #2] persistent status channel: ...
 [Discord Server #3] persistent status channel: ...
+[Discord Server #4] persistent status channel: ...
 ```
 
 No inbound game/network port is required. The bots only make outbound connections to Discord and the public 44th website APIs.

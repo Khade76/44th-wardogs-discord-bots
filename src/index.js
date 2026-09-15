@@ -50,8 +50,8 @@ function refreshInterval() {
 }
 
 const GROUP_CHOICES = [
-  { name: 'Normal (Servers #1 + #2)', value: 'normal' },
-  { name: 'Hardcore (Server #3)', value: 'hardcore' },
+  { name: 'Normal', value: 'normal' },
+  { name: 'Hardcore', value: 'hardcore' },
 ]
 
 const STATUS_COMMAND = new SlashCommandBuilder()
@@ -109,24 +109,43 @@ const botDefinitions = [
   {
     number: 3,
     token: env('DISCORD_WARDOGS_SERVER_3_BOT_TOKEN'),
-    serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', 'hardcore'),
+    serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', '9f71e8ef'),
     joinCode: env('DISCORD_WARDOGS_SERVER_3_JOIN_CODE', '529de475-7326-4178-81f0-f720aa9c9206'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID'),
     fallbackServer: {
-      id: 'wardogs-hardcore',
-      name: '44th Commandos #3 | Hardcore',
+      id: 'wardogs-9f71e8ef',
+      name: '44th Commandos #3 | New Player Friendly | discord.gg/44thwardogs',
       status: 'Unavailable',
-      region: 'Qonzer',
+      region: 'Europe / UK',
       players: '— / 100',
       playerCount: null,
       maxPlayers: 100,
       map: '—',
-      mode: 'Hardcore',
+      mode: '—',
       joinCode: '529de475-7326-4178-81f0-f720aa9c9206',
       joinId: '529de475-7326-4178-81f0-f720aa9c9206',
       scores: { valkyra: null, lonestar: null, manticore: null },
-      address: '216.144.249.76:7779',
-      notes: 'Live Qonzer WARDOGS RCON status is not configured yet.',
+      notes: 'Live status is currently unavailable from the website API.',
+    },
+  },
+  {
+    number: 4,
+    token: env('DISCORD_WARDOGS_SERVER_4_BOT_TOKEN'),
+    serverIdentifier: env('DISCORD_WARDOGS_SERVER_4_IDENTIFIER', '12577'),
+    joinCode: env('DISCORD_WARDOGS_SERVER_4_JOIN_CODE', '7f15ef51-2673-4eab-b3c8-d8176a3b41e4'),
+    statusChannelId: env('DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID'),
+    fallbackServer: {
+      id: 'wardogs-12577',
+      name: '44th Commandos #4 | Hardcore | discord.gg/44thwardogs',
+      status: 'Unavailable',
+      region: 'XRealm',
+      players: '—',
+      playerCount: null,
+      maxPlayers: null,
+      map: '—',
+      mode: 'Hardcore',
+      scores: { valkyra: null, lonestar: null, manticore: null },
+      notes: 'Live XRealm status is currently unavailable from the website API.',
     },
   },
 ]
@@ -263,11 +282,11 @@ function statusEmbed(server, definition) {
 }
 
 function defaultStatsGroup(bot) {
-  return bot.number === 3 ? 'hardcore' : 'normal'
+  return bot.number === 4 ? 'hardcore' : 'normal'
 }
 
 function groupLabel(group) {
-  return group === 'hardcore' ? 'Hardcore • Server #3' : 'Normal • Servers #1 + #2'
+  return group === 'hardcore' ? 'Hardcore' : 'Normal'
 }
 
 function formatNumber(value) {
