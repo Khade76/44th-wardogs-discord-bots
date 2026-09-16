@@ -148,6 +148,28 @@ const botDefinitions = [
       notes: 'Live XRealm status is currently unavailable from the website API.',
     },
   },
+  {
+    number: 5,
+    token: env('DISCORD_WARDOGS_SERVER_5_BOT_TOKEN'),
+    serverIdentifier: env('DISCORD_WARDOGS_SERVER_5_IDENTIFIER', '12648'),
+    joinCode: env('DISCORD_WARDOGS_SERVER_5_JOIN_CODE', '3500961c-24df-40b1-b299-6a897eddc2bd'),
+    statusChannelId: env('DISCORD_WARDOGS_SERVER_5_STATUS_CHANNEL_ID'),
+    fallbackServer: {
+      id: 'wardogs-12648',
+      name: '44th Commandos #5 | discord.gg/44thwardogs',
+      status: 'Unavailable',
+      region: 'XRealm',
+      players: '—',
+      playerCount: null,
+      maxPlayers: null,
+      map: '—',
+      mode: 'WARDOGS',
+      joinCode: '3500961c-24df-40b1-b299-6a897eddc2bd',
+      joinId: '3500961c-24df-40b1-b299-6a897eddc2bd',
+      scores: { valkyra: null, lonestar: null, manticore: null },
+      notes: 'Live XRealm status is currently unavailable from the website API.',
+    },
+  },
 ]
 
 const bots = botDefinitions
