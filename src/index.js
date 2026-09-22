@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { killfeedConfig, startKillfeed } from './killfeed.js'
 import {
   ActivityType,
   Client,
@@ -706,6 +707,15 @@ if (!statsApiUrl()) {
 }
 
 console.log(`Configured bots: ${bots.map((bot) => `#${bot.number}`).join(', ')}`)
+let killfeedSettings = null
+let killfeedStart = Promise.resolve(null)
+try {
+  killfeedSettings = killfeedConfig()
+  if (killfeedSettings && !bots.some((b) => b.number === 1)) throw new Error('Server #1 bot is not configured')
+} catch {
+  console.error('[Kill feed #1] configuration invalid; kill feed disabled. Existing status bots continue.')
+  killfeedSettings = null
+}
 console.log(`Discord status source: ${statusApiUrl()}`)
 console.log(`Discord stats source: ${statsApiUrl()}`)
 console.log(`Refresh interval: ${refreshInterval()}ms`)
@@ -716,6 +726,12 @@ for (const bot of bots) {
 for (const bot of bots) {
   bot.client.once(Events.ClientReady, async (readyClient) => {
     console.log(`[Discord Server #${bot.number}] logged in as ${readyClient.user.tag}`)
+    if (bot.number === 1 && killfeedSettings) {
+      killfeedStart = startKillfeed(bot, killfeedSettings).catch(() => {
+        console.error('[Kill feed #1] could not start; check state directory permissions and .lock file')
+        return null
+      })
+    }
 
     try {
       await registerCommands(bot)
@@ -750,8 +766,12 @@ timer.unref?.()
 async function shutdown(signal) {
   console.log(`Received ${signal}; shutting down Discord bots.`)
   clearInterval(timer)
-  for (const { client } of bots) client.destroy()
-  process.exit(0)
+  try { await (await killfeedStart)?.stop() }
+  catch { console.error('[Kill feed #1] shutdown failed; inspect the state lock before restarting') }
+  finally {
+    for (const { client } of bots) client.destroy()
+    process.exit(0)
+  }
 }
 
 process.once('SIGINT', () => shutdown('SIGINT'))

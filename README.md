@@ -18,7 +18,7 @@ Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 - Live player count, map, mode and faction scores when supplied by the website status API
 - Player kills, deaths, K/D, playtime, matches, sessions, aliases and current server/faction when supplied by the website stats API
 - Uses the public 44th website APIs
-- No RCON passwords or WARCON API keys are required in this repository
+- Status and stats need no RCON passwords or WARCON keys; the optional [Server #1 kill feed](docs/killfeed-server-1.md) requires a dedicated read-only key in private configuration
 - AMP Node.js App Runner friendly
 
 ## Requirements
@@ -156,7 +156,7 @@ In the existing private `wardogs-secrets.php` (outside OVH's public `www` direct
 ],
 ```
 
-Set the real RCON password only in that private website file. Use the same HTTP/HTTPS scheme as the working connection in WARCON; the snippet assumes HTTP. No RCON password or WARCON API key goes in the bot configuration.
+Set the real RCON password only in that private website file. Use the same HTTP/HTTPS scheme as the working connection in WARCON; the snippet assumes HTTP. No RCON password is needed by the bots. A WARCON key is needed only for the optional Server #1 kill feed.
 
 The website feed must return `id: "wardogs-12577"` or `identifier: "12577"`. The ID here is the agreed website lookup key based on the XRealm ID, not a WARCON database ID. If you use another website ID, set `DISCORD_WARDOGS_SERVER_4_IDENTIFIER` to its suffix after `wardogs-`.
 
