@@ -419,8 +419,16 @@ function statsEmbed(player, server) {
       { name: 'Kills', value: formatNumber(player.totalKills), inline: true },
       { name: 'Deaths', value: formatNumber(player.totalDeaths), inline: true },
       { name: 'K/D', value: String(player.kd ?? '0'), inline: true },
+      { name: 'Kills / Hour', value: player.killsPerHour == null ? '—' : Number(player.killsPerHour).toFixed(2), inline: true },
+      { name: 'Headshots', value: formatNumber(player.headshots), inline: true },
+      { name: 'Team Kills', value: formatNumber(player.teamKills), inline: true },
+      { name: 'Suicides', value: formatNumber(player.suicides), inline: true },
       { name: 'Playtime', value: formatDuration(player.secondsTracked), inline: true },
+      { name: 'Seed Time', value: `${formatNumber(player.seedMinutes)} min`, inline: true },
       { name: 'Matches', value: formatNumber(player.matchesSeen), inline: true },
+      { name: 'Wins / Losses / Draws', value: `${formatNumber(player.wins)} / ${formatNumber(player.losses)} / ${formatNumber(player.draws)}`, inline: true },
+      { name: 'Win Rate', value: player.winRate == null ? '—' : `${(Number(player.winRate) * 100).toFixed(1)}%`, inline: true },
+      { name: 'Cash', value: formatNumber(player.cash), inline: true },
       { name: 'Sessions', value: formatNumber(player.sessionsSeen), inline: true },
       { name: 'First Seen', value: formatDate(player.firstSeen), inline: true },
       { name: 'Last Seen', value: formatDate(player.lastSeen), inline: true },
@@ -455,7 +463,7 @@ function top10Embed(payload, server) {
     ? players.map((player, index) => {
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`
       return `${medal} **${truncate(player.name || player.id, 48)}**\n` +
-        `Kills **${formatNumber(player.totalKills)}** • Deaths **${formatNumber(player.totalDeaths)}** • K/D **${player.kd ?? 0}** • ${formatDuration(player.secondsTracked)}`
+        `Kills **${formatNumber(player.totalKills)}** • Deaths **${formatNumber(player.totalDeaths)}** • K/D **${player.kd ?? 0}** • Wins **${formatNumber(player.wins)}** • ${formatDuration(player.secondsTracked)}`
     }).join('\n\n')
     : 'No tracked players were found for this server.'
 
