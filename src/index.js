@@ -50,10 +50,10 @@ function refreshInterval() {
   return Math.max(MIN_REFRESH_MS, configured)
 }
 
-const GROUP_CHOICES = [
-  { name: 'Normal', value: 'normal' },
-  { name: 'Hardcore', value: 'hardcore' },
-]
+const SERVER_CHOICES = [1, 2, 3, 4, 5].map((number) => ({
+  name: `Server #${number}`,
+  value: String(number),
+}))
 
 const STATUS_COMMAND = new SlashCommandBuilder()
   .setName('status')
@@ -73,9 +73,9 @@ const STATS_COMMAND = new SlashCommandBuilder()
   )
   .addStringOption((option) =>
     option
-      .setName('group')
-      .setDescription('Stats pool; defaults to this bot server group')
-      .addChoices(...GROUP_CHOICES)
+      .setName('server')
+      .setDescription('Optional server; defaults to all five servers')
+      .addChoices(...SERVER_CHOICES)
   )
   .toJSON()
 
@@ -84,9 +84,9 @@ const TOP10_COMMAND = new SlashCommandBuilder()
   .setDescription('Show the WARDOGS top 10 player leaderboard')
   .addStringOption((option) =>
     option
-      .setName('group')
-      .setDescription('Stats pool; defaults to this bot server group')
-      .addChoices(...GROUP_CHOICES)
+      .setName('server')
+      .setDescription('Optional server; defaults to all five servers')
+      .addChoices(...SERVER_CHOICES)
   )
   .toJSON()
 
@@ -137,14 +137,14 @@ const botDefinitions = [
     statusChannelId: env('DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-12577',
-      name: '44th Commandos #4 | Hardcore | discord.gg/44thwardogs',
+      name: '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs',
       status: 'Unavailable',
       region: 'XRealm',
       players: '—',
       playerCount: null,
       maxPlayers: null,
       map: '—',
-      mode: 'Hardcore',
+      mode: 'KOTH',
       scores: { valkyra: null, lonestar: null, manticore: null },
       notes: 'Live XRealm status is currently unavailable from the website API.',
     },
@@ -157,14 +157,14 @@ const botDefinitions = [
     statusChannelId: env('DISCORD_WARDOGS_SERVER_5_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-12648',
-      name: '44th Commandos #5 | discord.gg/44thwardogs',
+      name: '44th Commandos #5 | New Player Friendly | US East | discord.gg/44thwardogs',
       status: 'Unavailable',
       region: 'XRealm',
       players: '—',
       playerCount: null,
       maxPlayers: null,
       map: '—',
-      mode: 'WARDOGS',
+      mode: 'KOTH',
       joinCode: '3500961c-24df-40b1-b299-6a897eddc2bd',
       joinId: '3500961c-24df-40b1-b299-6a897eddc2bd',
       scores: { valkyra: null, lonestar: null, manticore: null },
@@ -304,12 +304,8 @@ function statusEmbed(server, definition) {
   return embed
 }
 
-function defaultStatsGroup(bot) {
-  return bot.number === 4 ? 'hardcore' : 'normal'
-}
-
-function groupLabel(group) {
-  return group === 'hardcore' ? 'Hardcore' : 'Normal'
+function statsScopeLabel(server) {
+  return server ? `Server #${server}` : 'All five servers'
 }
 
 function formatNumber(value) {
@@ -388,12 +384,13 @@ async function loadServers() {
   return payload.servers
 }
 
-async function loadPlayerStats({ group, search = '', sort = 'kills', limit = 10 }) {
+async function loadPlayerStats({ server = null, search = '', sort = 'kills', limit = 10 }) {
   const base = statsApiUrl()
   if (!base) throw new Error('DISCORD_STATS_API_URL is not configured')
 
   const url = new URL(base)
-  url.searchParams.set('group', group)
+  url.searchParams.set('group', 'all')
+  if (server) url.searchParams.set('server', server)
   url.searchParams.set('sort', sort)
   url.searchParams.set('limit', String(limit))
   if (search) url.searchParams.set('search', search)
@@ -402,10 +399,13 @@ async function loadPlayerStats({ group, search = '', sort = 'kills', limit = 10 
   if (!Array.isArray(payload?.players)) {
     throw new Error('stats API response did not contain a players array')
   }
+  if (payload.group !== 'all' || (server && String(payload.server) !== String(server))) {
+    throw new Error('stats API did not honor the requested scope')
+  }
   return payload
 }
 
-function statsEmbed(player, group) {
+function statsEmbed(player, server) {
   const online = Boolean(player.online)
   const aliases = Array.isArray(player.aliases) ? player.aliases.filter(Boolean) : []
   const servers = Array.isArray(player.serversPlayed) ? player.serversPlayed.filter(Boolean) : []
@@ -413,7 +413,7 @@ function statsEmbed(player, group) {
   const embed = new EmbedBuilder()
     .setColor(online ? 0x22c55e : 0x5865f2)
     .setTitle(player.name || player.id || 'WARDOGS Player')
-    .setDescription(`${online ? '🟢 **Online**' : '⚫ **Offline**'} • ${groupLabel(group)}`)
+    .setDescription(`${online ? '🟢 **Online**' : '⚫ **Offline**'} • ${statsScopeLabel(server)}`)
     .addFields(
       { name: 'SteamID64', value: String(player.id || '—'), inline: false },
       { name: 'Kills', value: formatNumber(player.totalKills), inline: true },
@@ -447,7 +447,7 @@ function statsEmbed(player, group) {
   return embed
 }
 
-function top10Embed(payload, group) {
+function top10Embed(payload, server) {
   const players = payload.players.slice(0, 10)
   const summary = payload.summary || {}
 
@@ -457,18 +457,18 @@ function top10Embed(payload, group) {
       return `${medal} **${truncate(player.name || player.id, 48)}**\n` +
         `Kills **${formatNumber(player.totalKills)}** • Deaths **${formatNumber(player.totalDeaths)}** • K/D **${player.kd ?? 0}** • ${formatDuration(player.secondsTracked)}`
     }).join('\n\n')
-    : 'No tracked players were found for this stats group.'
+    : 'No tracked players were found for this server.'
 
   return new EmbedBuilder()
-    .setColor(group === 'hardcore' ? 0xef4444 : 0x5865f2)
-    .setTitle(`44th WARDOGS Top 10 • ${group === 'hardcore' ? 'Hardcore' : 'Normal'}`)
+    .setColor(0x5865f2)
+    .setTitle(`44th WARDOGS Top 10 • ${statsScopeLabel(server)}`)
     .setDescription(description)
     .addFields(
       { name: 'Tracked Players', value: formatNumber(summary.trackedPlayers ?? payload.total), inline: true },
       { name: 'Online Now', value: formatNumber(summary.onlinePlayers), inline: true },
       { name: 'Total Recorded Kills', value: formatNumber(summary.totalKillsRecorded), inline: true },
     )
-    .setFooter({ text: `${groupLabel(group)} • Ranked by total kills` })
+    .setFooter({ text: `${statsScopeLabel(server)} • Ranked by total kills` })
     .setTimestamp(payload.generatedAt ? new Date(payload.generatedAt) : new Date())
 }
 
@@ -614,7 +614,7 @@ async function handleStatsCommand(interaction, bot) {
   await interaction.deferReply()
 
   const steamId = interaction.options.getString('steamid', true).trim()
-  const group = interaction.options.getString('group') || defaultStatsGroup(bot)
+  const server = interaction.options.getString('server')
 
   if (!/^\d{17}$/.test(steamId)) {
     await interaction.editReply({
@@ -624,20 +624,20 @@ async function handleStatsCommand(interaction, bot) {
   }
 
   try {
-    const payload = await loadPlayerStats({ group, search: steamId, limit: 20 })
+    const payload = await loadPlayerStats({ server, search: steamId, limit: 20 })
     const player = payload.players.find((candidate) => String(candidate?.id) === steamId)
 
     if (!player) {
       await interaction.editReply({
         embeds: [errorEmbed(
           'WARDOGS Player Not Found',
-          `No ${group === 'hardcore' ? 'Hardcore' : 'Normal'} stats were found for SteamID64 \`${steamId}\`.`,
+          `No stats were found for SteamID64 \`${steamId}\` in ${statsScopeLabel(server).toLowerCase()}.`,
         )],
       })
       return
     }
 
-    await interaction.editReply({ embeds: [statsEmbed(player, group)] })
+    await interaction.editReply({ embeds: [statsEmbed(player, server)] })
   } catch (error) {
     console.error(`[Discord Server #${bot.number}] /stats failed:`, error.message)
     await interaction.editReply({
@@ -652,11 +652,11 @@ async function handleStatsCommand(interaction, bot) {
 async function handleTop10Command(interaction, bot) {
   await interaction.deferReply()
 
-  const group = interaction.options.getString('group') || defaultStatsGroup(bot)
+  const server = interaction.options.getString('server')
 
   try {
-    const payload = await loadPlayerStats({ group, sort: 'kills', limit: 10 })
-    await interaction.editReply({ embeds: [top10Embed(payload, group)] })
+    const payload = await loadPlayerStats({ server, sort: 'kills', limit: 10 })
+    await interaction.editReply({ embeds: [top10Embed(payload, server)] })
   } catch (error) {
     console.error(`[Discord Server #${bot.number}] /top10 failed:`, error.message)
     await interaction.editReply({

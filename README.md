@@ -5,16 +5,16 @@ Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 ## Features
 
 - Up to five Discord bot accounts from one Node.js process (only accounts with a token start)
-- Servers #1, #2 and #3 for the normal 44th WARDOGS servers
-- Server #4 for the XRealm-hosted Hardcore server
+- Servers #1, #2 and #3 for the 44th WARDOGS servers
+- Server #4 for the XRealm-hosted WARDOGS server
 - Server #5 for the XRealm-hosted WARDOGS server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
 - `/status` slash command for an on-demand server snapshot
 - `/stats <steamid>` slash command for persistent WARDOGS player statistics
 - `/top10` slash command for the current lifetime-kills leaderboard
-- Normal/Hardcore stats pools are supplied by the website/WARCON stats API
-- Optional Normal/Hardcore selector on `/stats` and `/top10`
+- Global lifetime totals come from the website/WARCON stats API, including historical Hardcore sessions
+- Optional Server #1–#5 selector on `/stats` and `/top10`
 - Live player count, map, mode and faction scores when supplied by the website status API
 - Player kills, deaths, K/D, playtime, matches, sessions, aliases and current server/faction when supplied by the website stats API
 - Uses the public 44th website APIs
@@ -68,7 +68,7 @@ DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_3_STATUS
 DISCORD_WARDOGS_SERVER_4_BOT_TOKEN=BOT_4_TOKEN
 DISCORD_WARDOGS_SERVER_4_IDENTIFIER=12577
 DISCORD_WARDOGS_SERVER_4_JOIN_CODE=7f15ef51-2673-4eab-b3c8-d8176a3b41e4
-DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_HARDCORE_STATUS
+DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_4_STATUS
 
 DISCORD_WARDOGS_SERVER_5_BOT_TOKEN=BOT_5_TOKEN
 DISCORD_WARDOGS_SERVER_5_IDENTIFIER=12648
@@ -90,7 +90,7 @@ Never commit the real `.env` file or Discord tokens.
 
 Shows an on-demand snapshot for the bot's WARDOGS server, including player count, map, mode and faction scores.
 
-### `/stats steamid:<SteamID64> [group]`
+### `/stats steamid:<SteamID64> [server]`
 
 Looks up a player through the 44th website stats API and displays:
 
@@ -110,32 +110,26 @@ Looks up a player through the 44th website stats API and displays:
 
 The SteamID must be a 17-digit SteamID64.
 
-The optional `group` can be:
-
-- **Normal** — the website/WARCON Normal stats pool
-- **Hardcore** — the website/WARCON Hardcore stats pool
-
-If `group` is omitted, Server #1, #2, #3 and #5 bots default to Normal, while Server #4 defaults to Hardcore. The upstream stats API determines which recorded matches belong to each pool; adding a bot does not change that classification.
+Omitting `server` returns the player's total across all five tracked servers. Choose Server #1–#5 to see that server's contribution. Historical Hardcore sessions remain in the lifetime totals.
 
 Examples:
 
 ```text
 /stats steamid:76561198091536028
-/stats steamid:76561198091536028 group:Normal
-/stats steamid:76561198091536028 group:Hardcore
+/stats steamid:76561198091536028 server:Server #4
 ```
 
-### `/top10 [group]`
+### `/top10 [server]`
 
 Shows the top 10 tracked WARDOGS players ranked by total kills. Each leaderboard entry includes kills, deaths, K/D and tracked playtime.
 
-The embed also shows the number of tracked players, players online and total recorded kills for that stats group.
+The embed also shows the number of tracked players, players online and total recorded kills for the selected scope.
 
-As with `/stats`, Server #1/#2/#3/#5 bots default to Normal and Server #4 defaults to Hardcore, or the user can explicitly select either group.
+As with `/stats`, the default is all five servers; the optional server selects one server's leaderboard.
 
-## Server #4: XRealm Hardcore
+## Server #4: XRealm
 
-- Name: `44th Commandos #4 | Hardcore | discord.gg/44thwardogs`
+- Current name: `44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs`
 - XRealm ID / default bot lookup identifier: `12577`
 - Persistent join code: `7f15ef51-2673-4eab-b3c8-d8176a3b41e4`
 - RCON endpoint: `84.32.103.104:20001` (management endpoint, not a player join address)
@@ -149,7 +143,7 @@ In the existing private `wardogs-secrets.php` (outside OVH's public `www` direct
 ```php
 [
     'id' => 'wardogs-12577',
-    'name' => '44th Commandos #4 | Hardcore | discord.gg/44thwardogs',
+    'name' => '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs',
     'url' => 'http://84.32.103.104:20001',
     'password' => 'CHANGE_ME_SERVER_4_RCON_PASSWORD',
     'joinCode' => '7f15ef51-2673-4eab-b3c8-d8176a3b41e4',
@@ -170,7 +164,7 @@ Older `.env` files may still contain `DISCORD_WARDOGS_SERVER_3_IDENTIFIER=hardco
 
 ## Server #5: XRealm
 
-- Name: `44th Commandos #5 | discord.gg/44thwardogs`
+- Current name: `44th Commandos #5 | New Player Friendly | US East | discord.gg/44thwardogs`
 - XRealm ID / default bot lookup identifier: `12648`
 - Persistent join code: `3500961c-24df-40b1-b299-6a897eddc2bd`
 - RCON endpoint: `88.216.222.131:20001` (management endpoint, not a player join address)

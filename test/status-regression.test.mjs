@@ -45,7 +45,7 @@ const all = boot([1, 2, 3, 4])
 check(all.clients.map((client) => client.token), ['test-1', 'test-2', 'test-3', 'test-4'])
 check(boot([1, 2, 3]).clients.length, 3)
 check(boot([4]).clients.length, 1)
-check(all.run('bots.map(defaultStatsGroup).join(",")'), 'normal,normal,normal,hardcore')
+check(all.run('bots.map(() => statsScopeLabel(null)).join(",")'), 'All five servers,All five servers,All five servers,All five servers')
 check(all.run('bots[2].serverIdentifier'), '9f71e8ef')
 check(all.run('bots[3].serverIdentifier'), '12577')
 
@@ -53,7 +53,7 @@ all.run(`globalThis.live = [
   {id: 'wardogs-278c7bc5', name: 'One', status: 'Online', playerCount: 11, maxPlayers: 100},
   {id: 'wardogs-9290beb1', name: 'Two', status: 'Online', playerCount: 22, maxPlayers: 100},
   {id: 'wardogs-9f71e8ef', name: 'Three', status: 'Online', playerCount: 33, maxPlayers: 100},
-  {id: 'wardogs-12577', name: '44th Commandos #4 | Hardcore | discord.gg/44thwardogs', status: 'Online', playerCount: 44, maxPlayers: 100, players: '44 / 100', map: 'Ozeti', mode: 'Hardcore', scores: {valkyra: 1, lonestar: 2, manticore: 3}}
+  {id: 'wardogs-12577', name: '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs', status: 'Online', playerCount: 44, maxPlayers: 100, players: '44 / 100', map: 'Ozeti', mode: 'KOTH', scores: {valkyra: 1, lonestar: 2, manticore: 3}}
 ]`)
 all.context.fetch = async () => ({ ok: true, json: async () => ({ servers: all.context.live }) })
 await all.run('refreshStatus()')
@@ -70,23 +70,37 @@ check(all.run('isManagedStatusMessage({author: {id: "test-3"}, embeds: [{footer:
 
 await all.run('registerCommands(bots[3])')
 check(Array.from(all.clients[3].commands[0], (command) => command.name), ['status', 'stats', 'top10'])
+check(all.clients[3].commands[0][1].options.map((option) => option.name), ['steamid', 'server'])
+check(all.clients[3].commands[0][2].options.map((option) => option.name), ['server'])
 let reply
 all.context.interaction = {
   deferReply: async () => {}, editReply: async (value) => { reply = value },
   options: { getString: (name) => name === 'steamid' ? '76561198091536028' : null },
 }
 await all.run('handleStatusCommand(interaction, bots[3])')
-check(reply.embeds[0].toJSON().title, '44th Commandos #4 | Hardcore | discord.gg/44thwardogs')
+check(reply.embeds[0].toJSON().title, '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs')
 check(reply.embeds[0].toJSON().fields.find((field) => field.name === 'Players').value, '44 / 100')
 const queries = []
 all.context.fetch = async (url) => {
-  queries.push(new URL(url).searchParams.get('group'))
-  return { ok: true, json: async () => ({ players: [] }) }
+  const params = new URL(url).searchParams
+  queries.push([params.get('group'), params.get('server')])
+  return { ok: true, json: async () => ({
+    group: 'all',
+    server: params.has('server') ? Number(params.get('server')) : null,
+    players: [{ id: '76561198091536028', name: 'Player', totalKills: 10, totalDeaths: 2, kd: 5 }],
+    summary: { trackedPlayers: 1, onlinePlayers: 0, totalKillsRecorded: 10 },
+  }) }
 }
 await all.run('handleStatsCommand(interaction, bots[3])')
+check(reply.embeds[0].toJSON().description, '⚫ **Offline** • All five servers')
 await all.run('handleTop10Command(interaction, bots[3])')
 await all.run('handleTop10Command(interaction, bots[2])')
-check(queries, ['hardcore', 'hardcore', 'normal'])
+check(queries, [['all', null], ['all', null], ['all', null]])
+all.context.interaction.options.getString = (name) => name === 'steamid' ? '76561198091536028' : name === 'server' ? '4' : null
+await all.run('handleStatsCommand(interaction, bots[3])')
+check(reply.embeds[0].toJSON().description, '⚫ **Offline** • Server #4')
+await all.run('handleTop10Command(interaction, bots[3])')
+check(queries.slice(-2), [['all', '4'], ['all', '4']])
 
 const override = boot([4], {
   DISCORD_WARDOGS_SERVER_4_IDENTIFIER: 'custom-four',
@@ -94,7 +108,7 @@ const override = boot([4], {
 })
 check(override.run('findServer([{id: "wardogs-custom-four", name: "Custom"}], bots[0]).name'), 'Custom')
 check(override.run('persistentJoinCode(findServer([], bots[0]), bots[0])'), '89607037-07ad-4039-8f7d-1fb9a46e707b')
-console.log(`${checks} offline checks passed: account activation, status routing, fallback, join code, commands, stats groups and environment overrides. No Discord login or messages sent.`)
+console.log(`${checks} offline checks passed: account activation, status routing, fallback, join code, commands, global stats and server filters. No Discord login or messages sent.`)
 
 
 const feedEnabled = boot([1, 2, 3, 4, 5], {
