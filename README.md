@@ -10,7 +10,10 @@ Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 - Server #5 for the XRealm-hosted WARDOGS server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
+- **Join game** link buttons using a Steam join bridge, plus a private **Join code** fallback
+- Persistent status posts ordered by server number within each channel
 - `/status` slash command for an on-demand server snapshot
+- `/status-order` admin command to rebuild the current channel's status posts in order
 - `/stats <steamid>` slash command for persistent WARDOGS player statistics
 - `/top10` slash command for the current lifetime-kills leaderboard
 - Global lifetime totals come from the website/WARCON stats API, including historical Hardcore sessions
@@ -78,7 +81,7 @@ DISCORD_WARDOGS_SERVER_5_STATUS_CHANNEL_ID=CHANNEL_ID_FOR_SERVER_5_STATUS
 
 `DISCORD_STATS_API_URL` defaults to `https://44thwardogs.com/api/player-stats.php`, so it can be omitted once the production website endpoint is live. It is included explicitly in `.env.example` so the source is obvious.
 
-All five status channel IDs may point to the same Discord channel if you want the server embeds together.
+All five status channel IDs may point to the same Discord channel if you want the server embeds together. They appear from top to bottom as **#1 → #2 → #3 → #4 → #5**. Only enabled accounts with a configured status channel participate. Run all five accounts in **one copy of this Node.js service** so it can coordinate their posts.
 
 `DISCORD_GUILD_ID` is recommended while testing because slash-command updates are then registered immediately in that guild. Leave it blank if you want global slash commands instead.
 
@@ -88,7 +91,15 @@ Never commit the real `.env` file or Discord tokens.
 
 ### `/status`
 
-Shows an on-demand snapshot for the bot's WARDOGS server, including player count, map, mode and faction scores.
+Shows an on-demand snapshot for the bot's WARDOGS server, including player count, map, mode, faction scores and join buttons.
+
+### `/status-order`
+
+Run this in the configured status channel to repost its managed server-status messages in ascending server-number order. You can choose the command from any of the bots: the running service coordinates all configured accounts in that channel.
+
+The person running it needs **Manage Messages** in the channel. The command replies privately. Each bot deletes only its own recognised status posts, so the bots do **not** need Manage Messages themselves. Ordinary conversation, kill-feed posts and `/status` replies are left alone. Reposted messages get new IDs and appear at the bottom of the channel; links to the old messages and pins on them do not carry over.
+
+Normally the refresh cycle repairs the order automatically. This command is useful when you deliberately want to rebuild the group. It reports an error if the channel is not configured or one of its configured accounts is not connected.
 
 ### `/stats steamid:<SteamID64> [server]`
 
@@ -126,6 +137,35 @@ Shows the top 10 tracked WARDOGS players ranked by total kills. Each leaderboard
 The embed also shows the number of tracked players, players online and total recorded kills for the selected scope.
 
 As with `/stats`, the default is all five servers; the optional server selects one server's leaderboard.
+
+## Join game buttons
+
+Persistent status posts and `/status` replies include:
+
+- **Join game** opens a browser page which hands the player to Steam and the chosen WARDOGS server.
+- **Join code** privately shows the server's persistent code and the manual joining steps. It does not write to the clipboard or post the instructions publicly.
+
+The default link uses [WARDOGS Server List's documented join bridge](https://wardogserverlist.com/openapi.json):
+
+```text
+https://wardogserverlist.com/join?key=id%7C<SERVER_JOIN_UUID>
+```
+
+This is an **unofficial third-party service**, separate from the website status feed. Its documentation says it resolves the current Steam lobby when the player clicks, so the link works across ordinary restarts and map changes. Steam and WARDOGS must be installed on that device. The browser may ask the player to select **Open in Steam**. Joining also depends on the server being listed and available, and on the bridge and Steam being reachable. A server re-registration can change its persistent UUID; update the website/configured join code if that happens. The bot does not fetch or poll `/join`.
+
+The link uses a valid `joinCode` or `joinId` from the website, falling back to `DISCORD_WARDOGS_SERVER_N_JOIN_CODE`. It never treats an RCON address, host identifier or game-instance ID as a join code. The existing five server codes work without any new `.env` entries. When no valid code is available, the code button and generated join link are omitted.
+
+To use your own tested player-facing HTTP(S) join page for a particular server, optionally set:
+
+```env
+DISCORD_WARDOGS_SERVER_1_JOIN_URL=https://your-domain.example/join/server-1
+```
+
+The equivalent `_2_` through `_5_` variables apply to the other servers. Leave them blank for the default bridge. Invalid, credential-bearing or non-HTTP(S) URLs fall back to the generated link when a valid code exists. A valid override can also supply the Join game button when no code is available. Raw `steam://` URLs cannot be used directly in these Discord link buttons.
+
+Manual fallback: open WARDOGS, go to **Deploy → Community → Join by ID**, paste the code, select **Lookup**, then **Join Match**.
+
+The link format and server lookups can be checked without a game client. Verify the final Discord → browser → Steam → WARDOGS handoff on a desktop with the game installed after deployment.
 
 ## Server #4: XRealm
 
@@ -190,7 +230,13 @@ To enable the fifth Discord account, add the Server #5 variables from `.env.exam
 
 When a `DISCORD_WARDOGS_SERVER_N_STATUS_CHANNEL_ID` is set, the appropriate bot maintains one status embed in that channel.
 
-On startup the bot searches recent messages for its previous managed status post. If it finds one, it reuses it. If not, it creates one. Every refresh cycle the same message is edited with the latest:
+On startup the service searches recent messages for each bot's previous managed status post. Existing posts already in order are reused. Missing or out-of-order posts cause only the affected suffix of the group to be reposted in ascending order; for example, replacing a missing #2 also reposts #3–#5 after it. Further refreshes edit those messages in place.
+
+All configured accounts sharing a channel must be connected before any messages are created, deleted or reordered. This prevents the account that happens to log in fastest from posting first. Ready accounts can still edit their existing posts while another account reconnects. Channels with different configurations are handled separately. Overlapping startup refreshes, timer refreshes and reorder commands are coordinated to avoid duplicate sends.
+
+Recovery searches up to **500 recent channel messages** per account. Use a dedicated status channel so these posts stay within that window across restarts. If the search reaches the limit without locating a post, the service reports the issue and does not create a possible duplicate. It also stops replacement attempts on permission/network errors rather than treating every error as a deleted message. Run only one copy of this bot service for the configured accounts.
+
+Every refresh cycle the same message is edited with the latest:
 
 - online / starting / offline state
 - player count
@@ -201,6 +247,7 @@ On startup the bot searches recent messages for its previous managed status post
 - Manticore score
 - server address when supplied
 - persistent join code
+- Join game and Join code buttons
 - lighting when available
 - updated timestamp
 
@@ -221,7 +268,7 @@ npm install
 npm start
 ```
 
-The process logs Node.js version, working directory, bot configuration, website API sources, each bot login, slash-command registration and every persistent status-post update.
+The process logs Node.js version, working directory, bot configuration, website API sources, each bot login, slash-command registration, status refreshes and post creation/errors.
 
 ## AMP Node.js App Runner
 
@@ -280,6 +327,8 @@ Put your bot tokens, Discord guild ID, website API URLs and optional persistent 
 
 Because the bot is already installed from GitHub, use **Update Application** in AMP to pull the latest `main`, then restart the instance.
 
+For the join-button and ordering update, the existing tokens and join codes are sufficient. Set all desired `DISCORD_WARDOGS_SERVER_N_STATUS_CHANNEL_ID` values to the same channel, and run a single service instance. The first coordinated refresh will add the buttons and repair the post order. Use `/status-order` in that channel if you want to rebuild the whole group. If testing a feature branch before it is merged, change **Git Repo Branch** to that branch before **Update Application**.
+
 If your existing `.env` already has the Discord tokens/status settings, you only need to add this line if you want to set the stats source explicitly:
 
 ```env
@@ -291,7 +340,7 @@ The code defaults to that production endpoint when the line is absent.
 After restart, with `DISCORD_GUILD_ID` configured, the console should show:
 
 ```text
-registered /status, /stats and /top10 in guild ...
+registered /status, /stats, /top10 and /status-order in guild ...
 ```
 
 The commands should then be available immediately in that Discord server.

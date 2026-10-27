@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import vm from 'node:vm'
 import { killfeedConfig } from '../src/killfeed.js'
+import { createStatusPostManager, isManagedStatusMessage } from '../src/status-posts.js'
+import { joinInstructionsPayload, persistentJoinCode, statusComponents } from '../src/status-join.js'
 
 const app = new URL('../src/index.js', import.meta.url)
 const require = createRequire(app)
@@ -10,6 +12,8 @@ const discord = require('discord.js')
 const source = readFileSync(app, 'utf8')
   .replace("import 'dotenv/config'", '')
   .replace("import { killfeedConfig, startKillfeed } from './killfeed.js'", '')
+  .replace("import { createStatusPostManager } from './status-posts.js'", '')
+  .replace("import { joinInstructionsPayload, persistentJoinCode, statusComponents } from './status-join.js'", '')
   .replace(/import \{[\s\S]*?\} from 'discord\.js'/, '')
 let checks = 0
 function check(value, expected) { assert.deepEqual(value, expected); checks++ }
@@ -31,7 +35,9 @@ function boot(numbers, overrides = {}) {
     isReady() { return true }
   }
   const context = vm.createContext({
-    ...discord, Client, killfeedConfig: () => killfeedConfig(env),
+    ...discord, Client, createStatusPostManager, isManagedStatusMessage,
+    joinInstructionsPayload, persistentJoinCode, statusComponents,
+    killfeedConfig: () => killfeedConfig(env),
     startKillfeed: async (bot, config) => { feeds.push({ number: bot.number, channelId: config.channelId }); return { stop: async () => {} } },
     process: { env, version: process.version, cwd: () => 'test', once() {}, exit(code) { throw Error(`exit ${code}`) } },
     console: { log() {}, warn() {}, error() {} }, URL, AbortController, Date,
@@ -69,7 +75,9 @@ check(all.run('isManagedStatusMessage({author: {id: "test-4"}, embeds: [{footer:
 check(all.run('isManagedStatusMessage({author: {id: "test-3"}, embeds: [{footer: {text: "44th Commando Regiment • WARDOGS Server #3"}}]}, bots[3])'), false)
 
 await all.run('registerCommands(bots[3])')
-check(Array.from(all.clients[3].commands[0], (command) => command.name), ['status', 'stats', 'top10'])
+check(Array.from(all.clients[3].commands[0], (command) => command.name), ['status', 'stats', 'top10', 'status-order'])
+check(all.clients[3].commands[0][3].default_member_permissions, String(discord.PermissionFlagsBits.ManageMessages))
+check(all.clients[3].commands[0][3].dm_permission, false)
 check(all.clients[3].commands[0][1].options.map((option) => option.name), ['steamid', 'server'])
 check(all.clients[3].commands[0][2].options.map((option) => option.name), ['server'])
 let reply
@@ -80,6 +88,8 @@ all.context.interaction = {
 await all.run('handleStatusCommand(interaction, bots[3])')
 check(reply.embeds[0].toJSON().title, '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs')
 check(reply.embeds[0].toJSON().fields.find((field) => field.name === 'Players').value, '44 / 100')
+check(reply.components[0].toJSON().components[0].url, 'https://wardogserverlist.com/join?key=id%7C7f15ef51-2673-4eab-b3c8-d8176a3b41e4')
+check(reply.components[0].toJSON().components[1].custom_id, 'wardogs:join:4')
 const queries = []
 all.context.fetch = async (url) => {
   const params = new URL(url).searchParams
@@ -108,6 +118,14 @@ const override = boot([4], {
 })
 check(override.run('findServer([{id: "wardogs-custom-four", name: "Custom"}], bots[0]).name'), 'Custom')
 check(override.run('persistentJoinCode(findServer([], bots[0]), bots[0])'), '89607037-07ad-4039-8f7d-1fb9a46e707b')
+const fallbackOverride = boot([3, 5], {
+  DISCORD_WARDOGS_SERVER_3_JOIN_CODE: '89607037-07ad-4039-8f7d-1fb9a46e707b',
+  DISCORD_WARDOGS_SERVER_5_JOIN_CODE: '6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1',
+  DISCORD_WARDOGS_SERVER_5_JOIN_URL: 'https://join.example.test/five',
+})
+check(fallbackOverride.run('persistentJoinCode(findServer([], bots[0]), bots[0])'), '89607037-07ad-4039-8f7d-1fb9a46e707b')
+check(fallbackOverride.run('persistentJoinCode(findServer([], bots[1]), bots[1])'), '6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1')
+check(fallbackOverride.run('statusMessagePayload(findServer([], bots[1]), bots[1]).components[0].toJSON().components[0].url'), 'https://join.example.test/five')
 console.log(`${checks} offline checks passed: account activation, status routing, fallback, join code, commands, global stats and server filters. No Discord login or messages sent.`)
 
 
@@ -125,4 +143,75 @@ const brokenFeed = boot([1, 2], { DISCORD_WARDOGS_SERVER_1_KILLFEED_ENABLED: '1'
 check(brokenFeed.run('killfeedSettings'), null)
 check(brokenFeed.clients.length, 2)
 check(boot([2], { DISCORD_WARDOGS_SERVER_1_KILLFEED_ENABLED: '1', WARCON_KILLFEED_URL: 'https://example.test', WARCON_KILLFEED_API_KEY: 'wck_' + 'x'.repeat(43) }).run('killfeedSettings'), null)
-console.log(`${checks} total status/integration checks passed; only bot #1 starts the feed. No external calls.`)
+// Button clicks are private, use fresh status data, and retain configured codes
+// when the website is temporarily unavailable.
+let deferredFlags
+all.context.buttonInteraction = {
+  isButton: () => true,
+  customId: 'wardogs:join:4',
+  deferReply: async (options) => { deferredFlags = options.flags },
+  editReply: async (value) => { reply = value },
+}
+all.context.fetch = async () => ({ ok: true, json: async () => ({ servers: [{
+  id: 'wardogs-12577', joinCode: '89607037-07ad-4039-8f7d-1fb9a46e707b',
+}] }) })
+await all.run('handleInteraction(buttonInteraction, bots[3])')
+check(deferredFlags, discord.MessageFlags.Ephemeral)
+check(reply.content.includes('89607037-07ad-4039-8f7d-1fb9a46e707b'), true)
+check(reply.allowedMentions.parse.length, 0)
+all.context.fetch = async () => { throw new Error('website unavailable') }
+await all.run('handleInteraction(buttonInteraction, bots[3])')
+check(reply.content.includes('7f15ef51-2673-4eab-b3c8-d8176a3b41e4'), true)
+all.context.buttonInteraction.customId = 'wardogs:join:3'
+reply = null
+await all.run('handleInteraction(buttonInteraction, bots[3])')
+check(reply, null)
+
+// The runtime permission check still protects /status-order if Discord command
+// permissions are changed. Only the selected channel is passed to the manager.
+all.run(`globalThis.reorderCalls = [];
+  statusPosts.reorder = async (channelId, servers) => {
+    reorderCalls.push({channelId, servers});
+    return {channelId, serverNumbers: [1, 2, 3, 4]};
+  }`)
+all.context.orderInteraction = {
+  isButton: () => false,
+  isChatInputCommand: () => true,
+  commandName: 'status-order',
+  inGuild: () => true,
+  channelId: 'shared-status-channel',
+  memberPermissions: { has: () => false },
+  reply: async (value) => { reply = value },
+  deferReply: async (options) => { deferredFlags = options.flags },
+  editReply: async (value) => { reply = value },
+}
+await all.run('handleInteraction(orderInteraction, bots[0])')
+check(reply.flags, discord.MessageFlags.Ephemeral)
+check(reply.content.includes('Manage Messages'), true)
+check(all.run('reorderCalls.length'), 0)
+all.context.orderInteraction.memberPermissions.has = (permission) => permission === discord.PermissionFlagsBits.ManageMessages
+all.context.fetch = async () => ({ ok: true, json: async () => ({ servers: all.context.live }) })
+await all.run('handleInteraction(orderInteraction, bots[0])')
+check(deferredFlags, discord.MessageFlags.Ephemeral)
+check(all.run('reorderCalls[0].channelId'), 'shared-status-channel')
+check(all.run('reorderCalls[0].servers[0].name'), 'One')
+check(reply.content.includes('Server #1 → Server #2 → Server #3 → Server #4'), true)
+all.context.orderInteraction.inGuild = () => false
+await all.run('handleInteraction(orderInteraction, bots[0])')
+check(all.run('reorderCalls.length'), 1)
+
+let releaseFetch
+let fetchCount = 0
+const pendingFetch = new Promise((resolve) => { releaseFetch = resolve })
+all.context.fetch = async () => {
+  fetchCount++
+  await pendingFetch
+  return { ok: true, json: async () => ({ servers: all.context.live }) }
+}
+const firstRefresh = all.run('refreshStatus()')
+const overlappingRefresh = all.run('refreshStatus()')
+check(firstRefresh === overlappingRefresh, true)
+check(fetchCount, 1)
+releaseFetch()
+await firstRefresh
+console.log(`${checks} total status/integration checks passed, including join buttons, private replies, reorder permissions and overlapping refreshes. No external calls.`)
