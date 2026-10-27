@@ -1,11 +1,15 @@
 import 'dotenv/config'
 import { killfeedConfig, startKillfeed } from './killfeed.js'
+import { createStatusPostManager } from './status-posts.js'
+import { joinInstructionsPayload, persistentJoinCode, statusComponents } from './status-join.js'
 import {
   ActivityType,
   Client,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  MessageFlags,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js'
 
@@ -60,6 +64,13 @@ const STATUS_COMMAND = new SlashCommandBuilder()
   .setDescription('Show the current WARDOGS server status')
   .toJSON()
 
+const STATUS_ORDER_COMMAND = new SlashCommandBuilder()
+  .setName('status-order')
+  .setDescription('Repost this channel\'s managed status messages in server-number order')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+  .setDMPermission(false)
+  .toJSON()
+
 const STATS_COMMAND = new SlashCommandBuilder()
   .setName('stats')
   .setDescription('Show WARDOGS player statistics for a SteamID64')
@@ -90,7 +101,7 @@ const TOP10_COMMAND = new SlashCommandBuilder()
   )
   .toJSON()
 
-const COMMANDS = [STATUS_COMMAND, STATS_COMMAND, TOP10_COMMAND]
+const COMMANDS = [STATUS_COMMAND, STATS_COMMAND, TOP10_COMMAND, STATUS_ORDER_COMMAND]
 
 const botDefinitions = [
   {
@@ -98,6 +109,7 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_1_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_1_IDENTIFIER', '278c7bc5'),
     joinCode: env('DISCORD_WARDOGS_SERVER_1_JOIN_CODE', '89607037-07ad-4039-8f7d-1fb9a46e707b'),
+    joinUrl: env('DISCORD_WARDOGS_SERVER_1_JOIN_URL'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_1_STATUS_CHANNEL_ID'),
   },
   {
@@ -105,6 +117,7 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_2_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_2_IDENTIFIER', '9290beb1'),
     joinCode: env('DISCORD_WARDOGS_SERVER_2_JOIN_CODE', '6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1'),
+    joinUrl: env('DISCORD_WARDOGS_SERVER_2_JOIN_URL'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_2_STATUS_CHANNEL_ID'),
   },
   {
@@ -112,6 +125,7 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_3_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_3_IDENTIFIER', '9f71e8ef'),
     joinCode: env('DISCORD_WARDOGS_SERVER_3_JOIN_CODE', '529de475-7326-4178-81f0-f720aa9c9206'),
+    joinUrl: env('DISCORD_WARDOGS_SERVER_3_JOIN_URL'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_3_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-9f71e8ef',
@@ -134,6 +148,7 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_4_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_4_IDENTIFIER', '12577'),
     joinCode: env('DISCORD_WARDOGS_SERVER_4_JOIN_CODE', '7f15ef51-2673-4eab-b3c8-d8176a3b41e4'),
+    joinUrl: env('DISCORD_WARDOGS_SERVER_4_JOIN_URL'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_4_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-12577',
@@ -154,6 +169,7 @@ const botDefinitions = [
     token: env('DISCORD_WARDOGS_SERVER_5_BOT_TOKEN'),
     serverIdentifier: env('DISCORD_WARDOGS_SERVER_5_IDENTIFIER', '12648'),
     joinCode: env('DISCORD_WARDOGS_SERVER_5_JOIN_CODE', '3500961c-24df-40b1-b299-6a897eddc2bd'),
+    joinUrl: env('DISCORD_WARDOGS_SERVER_5_JOIN_URL'),
     statusChannelId: env('DISCORD_WARDOGS_SERVER_5_STATUS_CHANNEL_ID'),
     fallbackServer: {
       id: 'wardogs-12648',
@@ -178,14 +194,21 @@ const bots = botDefinitions
   .map((definition) => ({
     ...definition,
     client: new Client({ intents: [GatewayIntentBits.Guilds] }),
-    statusMessage: null,
-    statusMessagePromise: null,
   }))
+
+const statusPosts = createStatusPostManager({
+  bots,
+  buildPayload: (servers, bot) => statusMessagePayload(findServer(servers, bot), bot),
+})
 
 function findServer(servers, definition) {
   return servers.find((server) => server?.identifier === definition.serverIdentifier)
     || servers.find((server) => server?.id === `wardogs-${definition.serverIdentifier}`)
-    || definition.fallbackServer
+    || (definition.fallbackServer && {
+      ...definition.fallbackServer,
+      joinCode: definition.joinCode,
+      joinId: definition.joinCode,
+    })
     || null
 }
 
@@ -220,16 +243,6 @@ function statusColour(server) {
 
 function scoreValue(value) {
   return Number.isFinite(value) ? String(value) : '—'
-}
-
-function persistentJoinCode(server, definition) {
-  const apiCode = String(server?.joinCode || server?.joinId || '').trim()
-  const configuredCode = String(definition?.joinCode || '').trim()
-  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-  if (uuid.test(apiCode)) return apiCode
-  if (uuid.test(configuredCode)) return configuredCode
-  return ''
 }
 
 function statusMapArtUrl(server) {
@@ -302,6 +315,14 @@ function statusEmbed(server, definition) {
   }
 
   return embed
+}
+
+function statusMessagePayload(server, definition) {
+  return {
+    embeds: [statusEmbed(server, definition)],
+    components: statusComponents(server, definition),
+    allowedMentions: { parse: [] },
+  }
 }
 
 function statsScopeLabel(server) {
@@ -489,73 +510,15 @@ function errorEmbed(title, description) {
     .setTimestamp()
 }
 
-function isManagedStatusMessage(message, bot) {
-  if (!message || message.author?.id !== bot.client.user?.id) return false
-  const footer = message.embeds?.[0]?.footer?.text || ''
-  return footer.includes(`WARDOGS Server #${bot.number}`)
+let refreshStatusPromise = null
+
+function refreshStatus() {
+  if (refreshStatusPromise) return refreshStatusPromise
+  refreshStatusPromise = performStatusRefresh().finally(() => { refreshStatusPromise = null })
+  return refreshStatusPromise
 }
 
-async function resolveStatusMessage(bot, channel) {
-  if (bot.statusMessage) {
-    try {
-      return await channel.messages.fetch(bot.statusMessage.id)
-    } catch {
-      bot.statusMessage = null
-    }
-  }
-
-  try {
-    const recent = await channel.messages.fetch({ limit: 50 })
-    const existing = recent.find((message) => isManagedStatusMessage(message, bot))
-    if (existing) {
-      bot.statusMessage = existing
-      return existing
-    }
-  } catch (error) {
-    console.warn(`[Discord Server #${bot.number}] unable to search for an existing status post:`, error.message)
-  }
-
-  return null
-}
-
-async function updatePersistentStatusPost(bot, server) {
-  if (!bot.statusChannelId || !bot.client.isReady()) return
-  if (bot.statusMessagePromise) return bot.statusMessagePromise
-
-  bot.statusMessagePromise = (async () => {
-    const channel = await bot.client.channels.fetch(bot.statusChannelId)
-    if (!channel?.isTextBased() || !channel.messages || typeof channel.send !== 'function') {
-      throw new Error(`status channel ${bot.statusChannelId} is not a text channel the bot can post in`)
-    }
-
-    const payload = { embeds: [statusEmbed(server, bot)] }
-    let message = await resolveStatusMessage(bot, channel)
-
-    if (message) {
-      try {
-        message = await message.edit(payload)
-        bot.statusMessage = message
-        console.log(`[Discord Server #${bot.number}] updated status post ${message.id}`)
-        return
-      } catch (error) {
-        console.warn(`[Discord Server #${bot.number}] could not edit status post ${message.id}; creating a replacement:`, error.message)
-        bot.statusMessage = null
-      }
-    }
-
-    message = await channel.send(payload)
-    bot.statusMessage = message
-    console.log(`[Discord Server #${bot.number}] created persistent status post ${message.id} in channel ${bot.statusChannelId}`)
-  })()
-
-  try {
-    await bot.statusMessagePromise
-  } finally {
-    bot.statusMessagePromise = null
-  }
-}
-
-async function refreshStatus() {
+async function performStatusRefresh() {
   if (!bots.some(({ client }) => client.isReady())) return
 
   let servers = []
@@ -577,13 +540,9 @@ async function refreshStatus() {
     })
 
     console.log(`[Discord Server #${bot.number}] ${bot.client.user.tag}: ${presence.activity}`)
-
-    try {
-      await updatePersistentStatusPost(bot, server)
-    } catch (error) {
-      console.error(`[Discord Server #${bot.number}] persistent status post update failed:`, error.message)
-    }
   }
+
+  await statusPosts.update(servers)
 }
 
 async function registerCommands(bot) {
@@ -592,12 +551,12 @@ async function registerCommands(bot) {
   if (guildId) {
     const guild = await bot.client.guilds.fetch(guildId)
     await guild.commands.set(COMMANDS)
-    console.log(`[Discord Server #${bot.number}] registered /status, /stats and /top10 in guild ${guildId}`)
+    console.log(`[Discord Server #${bot.number}] registered /status, /stats, /top10 and /status-order in guild ${guildId}`)
     return
   }
 
   await bot.client.application.commands.set(COMMANDS)
-  console.log(`[Discord Server #${bot.number}] registered global /status, /stats and /top10 commands`)
+  console.log(`[Discord Server #${bot.number}] registered global /status, /stats, /top10 and /status-order commands`)
 }
 
 async function handleStatusCommand(interaction, bot) {
@@ -606,7 +565,7 @@ async function handleStatusCommand(interaction, bot) {
   try {
     const servers = await loadServers()
     const server = findServer(servers, bot)
-    await interaction.editReply({ embeds: [statusEmbed(server, bot)] })
+    await interaction.editReply(statusMessagePayload(server, bot))
   } catch (error) {
     console.error(`[Discord Server #${bot.number}] /status failed:`, error.message)
     await interaction.editReply({
@@ -614,6 +573,53 @@ async function handleStatusCommand(interaction, bot) {
         `44th WARDOGS Server #${bot.number}`,
         'Unable to load the current server status. Please try again shortly.',
       )],
+    })
+  }
+}
+
+async function handleJoinCodeButton(interaction, bot) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral })
+
+  let servers = []
+  try {
+    servers = await loadServers()
+  } catch (error) {
+    console.warn(`[Discord Server #${bot.number}] using configured join code:`, error.message)
+  }
+
+  await interaction.editReply(joinInstructionsPayload(findServer(servers, bot), bot))
+}
+
+async function handleStatusOrderCommand(interaction) {
+  if (!interaction.inGuild() || !interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
+    await interaction.reply({
+      content: 'You need Manage Messages permission in this channel to reorder the status posts.',
+      flags: MessageFlags.Ephemeral,
+    })
+    return
+  }
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral })
+
+  let servers = []
+  try {
+    servers = await loadServers()
+  } catch (error) {
+    console.warn('Reordering status posts with unavailable status snapshots:', error.message)
+  }
+
+  try {
+    const result = await statusPosts.reorder(interaction.channelId, servers)
+    const order = result.serverNumbers.map((number) => `Server #${number}`).join(' → ')
+    await interaction.editReply({
+      content: `Status posts are now ordered **${order}**, from top to bottom. They will keep updating in place.`,
+      allowedMentions: { parse: [] },
+    })
+  } catch (error) {
+    console.error('Unable to reorder status posts:', error.message)
+    await interaction.editReply({
+      content: `Unable to reorder status posts: ${truncate(error.message, 1500)}`,
+      allowedMentions: { parse: [] },
     })
   }
 }
@@ -677,10 +683,22 @@ async function handleTop10Command(interaction, bot) {
 }
 
 async function handleInteraction(interaction, bot) {
+  if (interaction.isButton()) {
+    if (interaction.customId === `wardogs:join:${bot.number}`) {
+      await handleJoinCodeButton(interaction, bot)
+    }
+    return
+  }
+
   if (!interaction.isChatInputCommand()) return
 
   if (interaction.commandName === 'status') {
     await handleStatusCommand(interaction, bot)
+    return
+  }
+
+  if (interaction.commandName === 'status-order') {
+    await handleStatusOrderCommand(interaction)
     return
   }
 
