@@ -7,7 +7,7 @@ const firstCode = '89607037-07ad-4039-8f7d-1fb9a46e707b'
 const secondCode = '6eccb2c4-4e2a-4cf2-b2d5-67faf8e283b1'
 const configuredCode = '3500961c-24df-40b1-b299-6a897eddc2bd'
 const definition = { number: 5, joinCode: configuredCode }
-const bridgeUrl = (code) => `https://wardogserverlist.com/join?key=id%7C${code}`
+const bridgeUrl = (number) => `https://44thwardogs.com/join?server=${number}`
 const buttons = (server, bot) => statusComponents(server, bot).flatMap((row) => row.toJSON().components)
 
 test('validates each public join field separately before using configured fallback', () => {
@@ -34,7 +34,7 @@ test('serializes a Discord-compatible join link and the matching server code act
   assert.equal(row.components.length, 2)
   assert.equal(row.components[0].style, ButtonStyle.Link)
   assert.equal(row.components[0].label, 'Join game')
-  assert.equal(row.components[0].url, bridgeUrl(firstCode))
+  assert.equal(row.components[0].url, bridgeUrl(5))
   assert.equal(row.components[0].custom_id, undefined)
   assert.equal(row.components[1].style, ButtonStyle.Secondary)
   assert.equal(row.components[1].label, 'Join code')
@@ -43,8 +43,25 @@ test('serializes a Discord-compatible join link and the matching server code act
 })
 
 test('keeps the known configured link available when live status is unavailable', () => {
-  assert.equal(buttons(null, definition)[0].url, bridgeUrl(configuredCode))
-  assert.equal(buttons({ status: 'Unavailable' }, definition)[0].url, bridgeUrl(configuredCode))
+  assert.equal(buttons(null, definition)[0].url, bridgeUrl(5))
+  assert.equal(buttons({ status: 'Unavailable' }, definition)[0].url, bridgeUrl(5))
+})
+
+test('links all five server numbers to the 44th website even when no join code is available', () => {
+  for (const number of [1, 2, 3, 4, 5]) {
+    for (const server of [null, { joinCode: 'invalid' }, { instanceId: firstCode }]) {
+      const result = buttons(server, { number })
+      assert.equal(result.length, 1)
+      assert.equal(result[0].url, bridgeUrl(number))
+      assert.equal(result[0].label, 'Join game')
+    }
+  }
+})
+
+test('keeps the website target stable when a server join code changes', () => {
+  assert.equal(buttons({ joinCode: firstCode }, definition)[0].url, bridgeUrl(5))
+  assert.equal(buttons({ joinCode: secondCode }, definition)[0].url, bridgeUrl(5))
+  assert.equal(buttons({ joinCode: firstCode, number: 1 }, definition)[0].url, bridgeUrl(5))
 })
 
 test('supports credential-free HTTP(S) overrides and keeps code fallback when known', () => {
@@ -58,7 +75,7 @@ test('supports credential-free HTTP(S) overrides and keeps code fallback when kn
   assert.equal(result[0].url, 'https://example.test/join')
 })
 
-test('invalid URL overrides fall back safely to a known join code', () => {
+test('invalid URL overrides fall back safely to the own-website server link', () => {
   const invalidUrls = [
     '', 'not a URL', '//example.test/join', 'https:example.test/join', 'https://',
     'steam://connect/127.0.0.1:7777', 'javascript:alert(1)', 'discord://example.test',
@@ -67,14 +84,23 @@ test('invalid URL overrides fall back safely to a known join code', () => {
     'https://example.test/' + 'é'.repeat(100), {}, 42,
   ]
   for (const joinUrl of invalidUrls) {
-    assert.equal(buttons(null, { ...definition, joinUrl })[0].url, bridgeUrl(configuredCode))
+    assert.equal(buttons(null, { ...definition, joinUrl })[0].url, bridgeUrl(5))
+    assert.equal(buttons(null, { number: 1, joinUrl })[0].url, bridgeUrl(1))
   }
 })
 
-test('omits buttons when neither a valid code nor a valid override is available', () => {
-  assert.deepEqual(statusComponents(null, { number: 1 }), [])
-  assert.deepEqual(statusComponents({ instanceId: firstCode }, { number: 1 }), [])
-  assert.deepEqual(statusComponents({ joinCode: 'invalid' }, { number: 1, joinUrl: 'steam://run/1867240' }), [])
+test('omits generated links for unknown or malformed server numbers', () => {
+  for (const number of [undefined, null, 0, 6, -1, 1.5, NaN, Infinity, '1', '5', '1&server=2', {}, []]) {
+    assert.deepEqual(statusComponents(null, { ...definition, number }), [])
+    assert.deepEqual(statusComponents({ joinCode: firstCode }, { number, joinUrl: 'steam://run/1867240' }), [])
+  }
+  assert.deepEqual(statusComponents(null, undefined), [])
+})
+
+test('a valid override still works without a known server number and omits an unroutable code action', () => {
+  const result = buttons({ joinCode: firstCode }, { joinUrl: 'https://example.test/join' })
+  assert.equal(result.length, 1)
+  assert.equal(result[0].url, 'https://example.test/join')
 })
 
 test('manual join response supplies the current code and instructions without pinging anyone', () => {

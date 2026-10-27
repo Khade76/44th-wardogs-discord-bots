@@ -88,7 +88,7 @@ all.context.interaction = {
 await all.run('handleStatusCommand(interaction, bots[3])')
 check(reply.embeds[0].toJSON().title, '44th Commandos #4 | New Player Friendly | discord.gg/44thwardogs')
 check(reply.embeds[0].toJSON().fields.find((field) => field.name === 'Players').value, '44 / 100')
-check(reply.components[0].toJSON().components[0].url, 'https://wardogserverlist.com/join?key=id%7C7f15ef51-2673-4eab-b3c8-d8176a3b41e4')
+check(reply.components[0].toJSON().components[0].url, 'https://44thwardogs.com/join?server=4')
 check(reply.components[0].toJSON().components[1].custom_id, 'wardogs:join:4')
 const queries = []
 all.context.fetch = async (url) => {

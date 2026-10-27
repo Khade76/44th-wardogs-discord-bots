@@ -34,19 +34,20 @@ function validatedJoinUrl(value) {
 
 export function statusComponents(server, definition) {
   const code = persistentJoinCode(server, definition)
-  // This unofficial service resolves the current Steam lobby when the player clicks.
-  // Its public contract is at https://wardogserverlist.com/openapi.json (GET /join).
-  // /join is a player-facing page: the bot must not fetch or poll it.
+  const number = definition?.number
+  const knownServer = Number.isInteger(number) && number >= 1 && number <= 5
+  // The 44th website maps this stable server number to its configured Steam lobby.
+  // The player-facing page remains available even if this bot has no join code.
   const url = validatedJoinUrl(definition?.joinUrl)
-    || (code ? `https://wardogserverlist.com/join?key=${encodeURIComponent(`id|${code}`)}` : '')
+    || (knownServer ? `https://44thwardogs.com/join?server=${number}` : '')
   if (!url) return []
 
   const buttons = [new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Join game').setURL(url)]
-  if (code) {
+  if (code && knownServer) {
     buttons.push(new ButtonBuilder()
       .setStyle(ButtonStyle.Secondary)
       .setLabel('Join code')
-      .setCustomId(`wardogs:join:${definition.number}`))
+      .setCustomId(`wardogs:join:${number}`))
   }
   return [new ActionRowBuilder().addComponents(...buttons)]
 }
