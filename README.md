@@ -10,7 +10,7 @@ Standalone Node.js Discord bots for the 44th Commando Regiment WARDOGS servers.
 - Server #5 for the XRealm-hosted WARDOGS server
 - Per-server Discord presence updates every 30 seconds by default
 - Optional persistent per-server status embeds that edit themselves on the same refresh cycle
-- **Join game** link buttons using a Steam join bridge, plus a private **Join code** fallback
+- **Join game** link buttons using the 44th website's Steam join page, plus a private **Join code** fallback
 - Persistent status posts ordered by server number within each channel
 - `/status` slash command for an on-demand server snapshot
 - `/status-order` admin command to rebuild the current channel's status posts in order
@@ -142,26 +142,34 @@ As with `/stats`, the default is all five servers; the optional server selects o
 
 Persistent status posts and `/status` replies include:
 
-- **Join game** opens a browser page which hands the player to Steam and the chosen WARDOGS server.
+- **Join game** opens the 44th website's join page for the chosen WARDOGS server.
 - **Join code** privately shows the server's persistent code and the manual joining steps. It does not write to the clipboard or post the instructions publicly.
 
-The default link uses [WARDOGS Server List's documented join bridge](https://wardogserverlist.com/openapi.json):
+The default link goes directly to the 44th website, with the bot's server number from 1 to 5:
 
 ```text
-https://wardogserverlist.com/join?key=id%7C<SERVER_JOIN_UUID>
+https://44thwardogs.com/join?server=1
 ```
 
-This is an **unofficial third-party service**, separate from the website status feed. Its documentation says it resolves the current Steam lobby when the player clicks, so the link works across ordinary restarts and map changes. Steam and WARDOGS must be installed on that device. The browser may ask the player to select **Open in Steam**. Joining also depends on the server being listed and available, and on the bridge and Steam being reachable. A server re-registration can change its persistent UUID; update the website/configured join code if that happens. The bot does not fetch or poll `/join`.
+The website handles the server lookup and Steam handoff using the server's **configured** Steam lobby. Set `steamLobbyId` or `steamJoinUrl` on the matching server in its private `wardogs-secrets.php`; update that setting when the lobby changes. Automatic Steam lobby discovery is not implemented. Without a valid lobby setting the website provides the manual join-code fallback. The bot's numbered link remains stable when the website's lobby setting changes. Steam and WARDOGS must be installed on the player's device; the browser may ask the player to select **Open in Steam**. The bot does not fetch or poll `/join`, and the default link has no dependency on an external join website.
 
-The link uses a valid `joinCode` or `joinId` from the website, falling back to `DISCORD_WARDOGS_SERVER_N_JOIN_CODE`. It never treats an RCON address, host identifier or game-instance ID as a join code. The existing five server codes work without any new `.env` entries. When no valid code is available, the code button and generated join link are omitted.
+The **Join game** button is available for each configured server number even if the bot has no valid join code, because the website resolves the target. The separate **Join code** button uses a valid `joinCode` or `joinId` from the status feed, falling back to `DISCORD_WARDOGS_SERVER_N_JOIN_CODE`. It never treats an RCON address, host identifier or game-instance ID as a join code. When no valid code is available, only the code button is omitted. No new bot `.env` entries are required for the default website link.
 
-To use your own tested player-facing HTTP(S) join page for a particular server, optionally set:
+To override the default with another tested player-facing HTTP(S) join page for a particular server, optionally set:
 
 ```env
 DISCORD_WARDOGS_SERVER_1_JOIN_URL=https://your-domain.example/join/server-1
 ```
 
-The equivalent `_2_` through `_5_` variables apply to the other servers. Leave them blank for the default bridge. Invalid, credential-bearing or non-HTTP(S) URLs fall back to the generated link when a valid code exists. A valid override can also supply the Join game button when no code is available. Raw `steam://` URLs cannot be used directly in these Discord link buttons.
+The equivalent `_2_` through `_5_` variables apply to the other servers. Leave them blank for the 44th website link. **Clear any existing explicit external `JOIN_URL` overrides to switch those bots to the 44th website.** Valid overrides keep their existing behaviour and take precedence over the default. Invalid, credential-bearing or non-HTTP(S) URLs fall back to the website link for a known server number. Raw `steam://` URLs cannot be used directly in these Discord link buttons.
+
+### Deploy the website before the bots
+
+1. Deploy the 44th website's `/join` page and join API first, then configure each server's current Steam lobby on the website. Check that `https://44thwardogs.com/join?server=1` through `?server=5` load correctly and show either the configured Steam link or the manual fallback.
+2. Clear old explicit external `DISCORD_WARDOGS_SERVER_N_JOIN_URL` values from the bot environment, or leave the optional values blank.
+3. Update the bot application from GitHub and restart it. The next status refresh replaces the default buttons with the 44th website links.
+
+Updating the bots before the website would send players to a page that may return 404. The bot update does not deploy the website.
 
 Manual fallback: open WARDOGS, go to **Deploy → Community → Join by ID**, paste the code, select **Lookup**, then **Join Match**.
 
@@ -327,7 +335,7 @@ Put your bot tokens, Discord guild ID, website API URLs and optional persistent 
 
 Because the bot is already installed from GitHub, use **Update Application** in AMP to pull the latest `main`, then restart the instance.
 
-For the join-button and ordering update, the existing tokens and join codes are sufficient. Set all desired `DISCORD_WARDOGS_SERVER_N_STATUS_CHANNEL_ID` values to the same channel, and run a single service instance. The first coordinated refresh will add the buttons and repair the post order. Use `/status-order` in that channel if you want to rebuild the whole group. If testing a feature branch before it is merged, change **Git Repo Branch** to that branch before **Update Application**.
+For the website join-button update, **deploy the website's `/join` page first**, then clear any old explicit external `JOIN_URL` overrides before updating and restarting the bots. Existing bot tokens and join codes remain sufficient. For ordered status posts, set all desired `DISCORD_WARDOGS_SERVER_N_STATUS_CHANNEL_ID` values to the same channel and run a single service instance. The first coordinated refresh will update the buttons and repair the post order. Use `/status-order` in that channel if you want to rebuild the whole group. If testing a feature branch before it is merged, change **Git Repo Branch** to that branch before **Update Application**.
 
 If your existing `.env` already has the Discord tokens/status settings, you only need to add this line if you want to set the stats source explicitly:
 
